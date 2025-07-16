@@ -333,10 +333,10 @@ the same display and thus provide the ability to easily compare the effects of
 different kinds of performance behavior.")
     (license license:bsd-3)))
 
-(define-public cubew
+(define (make-cubew versionstring)
   (package
     (name "cubew")
-    (version "4.9")
+    (version versionstring)
     (source
      (origin
        (method url-fetch)
@@ -360,10 +360,10 @@ different kinds of performance behavior. CubeW is the high performance C Writer
 library of the CUBE project.")
     (license license:bsd-3)))
 
-(define-public cubelib
+(define (make-cubelib versionstring)
   (package
     (name "cubelib")
-    (version "4.9")
+    (version versionstring)
     (source
      (origin
        (method url-fetch)
@@ -395,10 +395,10 @@ different kinds of performance behavior. CubeLib is the general purpose C++
 library and tool of the CUBE project.")
     (license license:bsd-3)))
 
-(define-public cubegui
+(define (make-cubegui versionstring)
   (package
     (name "cubegui")
-    (version "4.9")
+    (version versionstring)
     (source
      (origin
        (method url-fetch)
@@ -431,6 +431,11 @@ the same display and thus provide the ability to easily compare the effects of
 different kinds of performance behavior. CubeGUI is the graphical explorer of
 the CUBE project.")
     (license license:bsd-3)))
+
+(define cubeversion "4.9")
+(define-public cubew   (make-cubew   cubeversion))
+(define-public cubelib (make-cubelib cubeversion))
+(define-public cubegui (make-cubegui cubeversion))
 
 (define-public tracy-wayland
   (package
