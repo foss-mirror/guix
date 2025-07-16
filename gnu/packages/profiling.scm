@@ -418,7 +418,8 @@ library and tool of the CUBE project.")
        (method url-fetch)
        (uri
          (string-append
-           "https://apps.fz-juelich.de/scalasca/releases/cube/4.9/dist/cubegui-"
+           "https://apps.fz-juelich.de/scalasca/releases/cube/"
+           version "/dist/cubegui-"
            version ".tar.gz"))
        (sha256
          (base32 "04byhf00xnn1ppca914ag4hq2kjv37lhwyh8dl369ps47mp6viqh"))))
