@@ -345,7 +345,15 @@ different kinds of performance behavior.")
              version "/dist/cubew-"
              version ".tar.gz"))
        (sha256 (base32 "1pdcs8688y4nwcxshgs9773xmdajxahsbjsrfh8m7gv9qn0lxxsf"))))
+     (inputs (list zlib))
      (build-system gnu-build-system)
+     (arguments
+       `(#:configure-flags
+         `("--enable-shared" "--disable-static" "--disable-silent-rules"
+           ,(string-append "--with-frontend-zlib="
+             (assoc-ref %build-inputs "zlib") "/lib")
+           ,(string-append "--with-backend-zlib="
+             (assoc-ref %build-inputs "zlib") "/lib"))))
      (home-page "https://www.scalasca.org/software/cube-4.x/download.html")
     (synopsis "Performance report explorer for parallel programs")
     (description
@@ -373,12 +381,15 @@ library of the CUBE project.")
              version ".tar.gz"))
        (sha256 (base32 "0hwl0aihn6fgpl0qhqckxc3sslb78wq6xav5ykfgfjzpyddqyrd0"))))
     (inputs (list zlib))
-    (native-inputs (list qtbase ; native because of qmake
-                         ))
+;    (native-inputs (list qtbase)) ; native because of qmake
     (build-system gnu-build-system)
     (arguments
      `(#:configure-flags
-       `("--enable-shared" "--disable-static" "--disable-silent-rules")
+       `("--enable-shared" "--disable-static" "--disable-silent-rules"
+         ,(string-append "--with-frontend-zlib="
+           (assoc-ref %build-inputs "zlib") "/lib")
+         ,(string-append "--with-backend-zlib="
+           (assoc-ref %build-inputs "zlib") "/lib"))
       #:parallel-tests? #f
     ))
     (home-page "https://www.scalasca.org/software/cube-4.x/download.html")
@@ -407,8 +418,7 @@ library and tool of the CUBE project.")
              version ".tar.gz"))
        (sha256 (base32 "04byhf00xnn1ppca914ag4hq2kjv37lhwyh8dl369ps47mp6viqh"))))
     (inputs (list cubelib dbus perl))
-    (native-inputs (list qtbase ; native because of qmake
-                         ))
+    (native-inputs (list qtbase )) ; native because of qmake
     (build-system gnu-build-system)
     (outputs '("out"))
     (arguments
