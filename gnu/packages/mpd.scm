@@ -39,6 +39,7 @@
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system meson)
   #:use-module (guix build-system python)
+  #:use-module (gnu packages algebra)
   #:use-module (gnu packages audio)
   #:use-module (gnu packages autotools)
   #:use-module (gnu packages avahi)
@@ -57,7 +58,7 @@
   #:use-module (gnu packages libusb)
   #:use-module (gnu packages lua)
   #:use-module (gnu packages readline)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages check)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages curl)
@@ -309,6 +310,7 @@ terminal using ncurses.")
     (build-system gnu-build-system)
     (inputs (list boost
                   curl
+                  fftw
                   icu4c
                   libmpdclient
                   ncurses
@@ -321,7 +323,8 @@ terminal using ncurses.")
            pkg-config))
     (arguments
      (list #:configure-flags
-           #~(list "BOOST_LIB_SUFFIX=" "--with-taglib" "--enable-clock")))
+           #~(list "BOOST_LIB_SUFFIX=" "--with-taglib" "--enable-clock"
+                   "--enable-visualizer")))
     (synopsis "Featureful ncurses based MPD client inspired by ncmpc")
     (description "Ncmpcpp is an mpd client with a UI very similar to ncmpc,
 but it provides new useful features such as support for regular expressions
@@ -504,7 +507,7 @@ MPRIS 2 support.")
 (define-public cantata
   (package
     (name "cantata")
-    (version "3.3.0")
+    (version "3.3.1")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -513,7 +516,7 @@ MPRIS 2 support.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "09nskgw9c6jhr647yv9irzjb2zibv1w8bwbpfgz0viibqn81f7bp"))))
+                "0x5bm8s9cl68ybdv37w65kjlxyz40s42ddyf0cv4351vxxiiyng2"))))
     (build-system cmake-build-system)
     (arguments
      `(#:tests? #f)) ; No test suite

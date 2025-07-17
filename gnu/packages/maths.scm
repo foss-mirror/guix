@@ -51,7 +51,7 @@
 ;;; Copyright © 2021, 2023, 2024 Guillaume Le Vaillant <glv@posteo.net>
 ;;; Copyright © 2021 Pierre-Antoine Bouttier <pierre-antoine.bouttier@univ-grenoble-alpes.fr>
 ;;; Copyright © 2022 Zhu Zihao <all_but_last@163.com>
-;;; Copyright © 2022 Sharlatan Hellseher <sharlatanus@gmail.com>
+;;; Copyright © 2022-2025 Sharlatan Hellseher <sharlatanus@gmail.com>
 ;;; Copyright © 2022 Philip McGrath <philip@philipmcgrath.com>
 ;;; Copyright © 2022 Marek Felšöci <marek@felsoci.sk>
 ;;; Copyright © 2022 vicvbcun <guix@ikherbers.com>
@@ -184,7 +184,8 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
   #:use-module (gnu packages readline)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages tbb)
   #:use-module (gnu packages scheme)
   #:use-module (gnu packages serialization)
@@ -199,6 +200,7 @@
   #:use-module (gnu packages time)
   #:use-module (gnu packages tls)
   #:use-module (gnu packages version-control)
+  #:use-module (gnu packages web)
   #:use-module (gnu packages wxwidgets)
   #:use-module (gnu packages xdisorg)
   #:use-module (gnu packages xml)
@@ -916,7 +918,7 @@ tropical varieties.")
 (define-public 4ti2
   (package
     (name "4ti2")
-    (version "1.6.10")
+    (version "1.6.12")
     (source
      (origin
        (method url-fetch)
@@ -926,7 +928,7 @@ tropical varieties.")
                                        version)
                            "/4ti2-" version ".tar.gz"))
        (sha256
-        (base32 "0sx8n4acmqx086a5cfkdkqxnjrlr7nsihnzxwi1vcij2n6z93hgp"))))
+        (base32 "1p82sjwsbyg418jfb1wzff1x10h4yhxgnqnsvz33k3x121k2cwjw"))))
     (build-system gnu-build-system)
     (native-inputs
      (list (@ (gnu packages base) which))) ; for the tests
@@ -1300,16 +1302,17 @@ provide LAPACK for someone who does not have access to a Fortran compiler.")
 (define-public scalapack
   (package
     (name "scalapack")
-    (version "2.1.0")
+    (version "2.2.2")
     (source
      (origin
-       (method url-fetch)
-       (uri (string-append "http://www.netlib.org/scalapack/scalapack-"
-                           version ".tgz"))
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/Reference-ScaLAPACK/scalapack")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
        (sha256
         (base32
-         "19i0h9vdc3zsy58r6fy1vs2kz2l7amifkz0cf926j90xz1n23nb1"))
-       (patches (search-patches "scalapack-gcc-10-compilation.patch"))))
+         "0abs4j9iknd3qiyaj06gh00iyki71c2lzpmyv21ncv7f7vy1ccr8"))))
     (build-system cmake-build-system)
     (inputs
      `(("mpi" ,openmpi)
@@ -1319,14 +1322,13 @@ provide LAPACK for someone who does not have access to a Fortran compiler.")
      `(#:configure-flags `("-DBUILD_SHARED_LIBS:BOOL=YES")
        #:phases (modify-phases %standard-phases
                   (add-before 'check 'mpi-setup
-		    ,%openmpi-setup)
-                  (add-after 'unpack 'skip-faulty-test
+                    ,%openmpi-setup)
+                  (add-after 'unpack 'skip-faulty-tests
                     (lambda _
-                      ;; FIXME: Skip these two tests that fail to complete for
-                      ;; unknown reasons:
-                      ;; <https://github.com/Reference-ScaLAPACK/scalapack/issues/43>.
+                      ;; FIXME: Skip two tests that fail to complete.  See
+                      ;; <https://github.com/amd/scalapack/commit/d3b6248b26f615b118ff4d72a00b3028f59a47f6>.
                       (substitute* "TESTING/CMakeLists.txt"
-                        (("^add_test\\(x[sd]hseqr.*" all)
+                        (("^add_test\\(x[cz]heevr.*" all)
                          (string-append "# " all "\n"))))))))
     (home-page "https://www.netlib.org/scalapack/")
     (synopsis "Library for scalable numerical linear algebra")
@@ -1402,21 +1404,39 @@ in the terminal or with an external viewer.")
 (define-public giza
   (package
     (name "giza")
-    (version "1.4.1")
+    (version "1.5.0")
     (source
      (origin
        (method git-fetch)
        (uri (git-reference
              (url "https://github.com/danieljprice/giza")
              (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
        (sha256
-        (base32 "17h8hkhcqlvgryyp5n206fbqpals2vbnjy4f6f1zwj9jiblgi5mj"))
-       (file-name (git-file-name name version))))
+        (base32 "1qair5j6rq17hwvyxl6k2n4hkvgjw5wczmfzn7qh7kcv3qpg9p5l"))))
     (build-system gnu-build-system)
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'check 'start-xorg-server
+            (lambda* (#:key inputs #:allow-other-keys)
+              (system "Xvfb :99 -screen 0 1920x1080x24 &")
+              (setenv "DISPLAY" ":99")))
+          ;; Tests are interactive, see
+          ;; <https://github.com/danieljprice/giza/blob/v1.5.0/.github/workflows/build.yml#L52>.
+          (replace 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (invoke "sh" "-c" "yes '' | make check")))))))
     (native-inputs
-     (list perl pkg-config))
+     (list perl
+           pkg-config
+           xorg-server-for-tests))
     (inputs
-     (list cairo freetype gfortran))
+     (list cairo
+           freetype
+           gfortran))
     (home-page "https://danieljprice.github.io/giza/")
     (synopsis "Scientific plotting library for C/Fortran")
     (description
@@ -1462,7 +1482,7 @@ plotting engine by third-party applications like Octave.")
 (define-public hmat
   (package
     (name "hmat")
-    (version "1.9.0")
+    (version "1.10.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1471,7 +1491,7 @@ plotting engine by third-party applications like Octave.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0ssjzf3sdhn80w03bhp694s413222cl0100bf36mx70q3a1b6vi5"))))
+                "1cdaq5j2gknar7hcycll1ra9f0pqvri1bqsj0nf21kc4j2ynaw8s"))))
     (build-system cmake-build-system)
     (arguments
      ;; Examples are the tests.
@@ -1486,7 +1506,7 @@ C++ with a C API.  It contains a LU and LLt solver, and a few other things.")
 (define-public cminpack
   (package
     (name "cminpack")
-    (version "1.3.9")
+    (version "1.3.11")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1495,7 +1515,7 @@ C++ with a C API.  It contains a LU and LLt solver, and a few other things.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "05cjb54in7kks70rrnmvczwkg4nsxhwyf23abxqdj143zwbz4yyr"))))
+                "13y5lam0g6imky6wigg8w89k8xqifqawbs9hja6fz37242agyj71"))))
     (build-system cmake-build-system)
     (arguments
      (list #:configure-flags #~(list "-DBUILD_SHARED_LIBS=ON")))
@@ -1533,7 +1553,7 @@ NonLinear Programming) problems.  It builds on top of Cbc and Ipopt.")
 (define-public pagmo
   (package
     (name "pagmo")
-    (version "2.19.0")
+    (version "2.19.1")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1542,7 +1562,7 @@ NonLinear Programming) problems.  It builds on top of Cbc and Ipopt.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0g0j0k0cwp8kyyggj80s5cd24bl6gqmf6f5g7j2axswr2bdj16fg"))))
+                "1xx7f06idfhkh4qijh5rcxnldyac2pqb29j09w7k2b2h91xkgnl9"))))
     (build-system cmake-build-system)
     (arguments
      (list #:configure-flags #~(list "-DPAGMO_BUILD_TESTS=ON"
@@ -1562,6 +1582,69 @@ their deployment in massively parallel environments easy.")
                          "powerpc64le-linux"))
     ;; Dual licensed, user choice.
     (license (list license:lgpl3+ license:gpl3+))))
+
+(define-public arccon
+  (package
+    (name "arccon")
+    (version "1.2.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/arcaneframework/framework")
+             (commit (string-append "arccon-v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0zvj863plifp4rs3wzq5z18vh7z3bh7zy90cvn12b6n0jbpfdpg3"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:tests? #f
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'configure 'chdir-arccon
+            (lambda _
+              (chdir "arccon"))))))
+    (home-page "https://github.com/arcaneframework/framework")
+    (synopsis "Arcane Framework's CMake build libraries")
+    (description "Arccon is part of the Arcane framework, providing core
+functionality for the Arcane development platform.")
+    (license license:asl2.0)))
+
+(define-public arccore
+  (package
+    (name "arccore")
+    (version "2.5.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/arcaneframework/framework")
+             (commit (string-append "arccore-v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0cxqwhhs3zafiqnrjs28y60xg14jifg2xdycpr7l2291hyh6r7ra"))))
+    (build-system cmake-build-system)
+    (native-inputs (list arccon pkg-config googletest))
+    (inputs (list glib openmpi))
+    (arguments
+     (list
+      #:configure-flags
+      #~(list "-DBUILD_SHARED_LIBS=TRUE" "-DARCCORE_USE_MPI=TRUE"
+              "-DARCCORE_WANT_TEST=TRUE")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'configure 'chdir-arccore
+            (lambda _
+              (chdir "arccore"))))))
+    (home-page "https://github.com/arcaneframework/framework")
+    (synopsis "Arcane Framework's base functionalities for simulation code")
+    (description
+     "Arcane is a development environment for parallel numerical calculation
+code.  It supports the architectural aspects of a calculation code, such as data
+structures for meshing and parallelism, as well as more environment-related aspects
+such as dataset configuration.")
+    (license license:asl2.0)))
 
 (define-public gctp
   (package
@@ -1865,15 +1948,15 @@ extremely large and complex data collections.")
                  "src/H5Epubgen.h"
                  "src/H5Eterm.h"
                  "src/H5overflow.h"
-                 "src/H5version.h"))))
-       (patches (search-patches "hdf5-config-dependencies.patch"))))
+                 "src/H5version.h"))))))
     (build-system cmake-build-system)
     (arguments
      (list
       ;; Some of the users, notably Flann, need the C++ interface.
       #:configure-flags
       #~(list
-         (string-append "-DHDF5_INSTALL_CMAKE_DIR=" #$output "/lib/cmake")
+         "-DBUILD_STATIC_LIBS=OFF"
+         "-DHDF5_INSTALL_CMAKE_DIR=lib/cmake"
          "-DHDF5_BUILD_CPP_LIB=ON"
          "-DHDF5_BUILD_FORTRAN=ON"
          ;; Build a thread-safe library.  Unfortunately, CMakeLists.txt
@@ -2166,18 +2249,28 @@ Swath).")
               (prepend openmpi)))
     (arguments
      (substitute-keyword-arguments (package-arguments hdf5)
-       ((#:configure-flags _ #f)
-        #~(list
-           (string-append "-DHDF5_INSTALL_CMAKE_DIR=" #$output "/lib/cmake")
-           "-DHDF5_ENABLE_THREADSAFE=OFF"
-           "-DHDF5_ENABLE_PARALLEL=ON"
-           "-DHDF5_BUILD_FORTRAN=ON"
-           "-DHDF5_BUILD_CPP_LIB=OFF"
-           "-DHDF5_BUILD_DOC=ON"))
+       ((#:configure-flags flags '())
+        #~(append (filter (lambda (flag)
+                            (not
+                             (or (string-prefix? "-DHDF5_ENABLE_THREADSAFE" flag)
+                                 (string-prefix? "-DHDF5_BUILD_CPP_LIB" flag)
+                                 (string-prefix? "-DALLOW_UNSUPPORTED" flag))))
+                          #$flags)
+                  (list "-DHDF5_ENABLE_THREADSAFE=OFF"
+                        "-DHDF5_ENABLE_PARALLEL=ON"
+                        "-DHDF5_BUILD_CPP_LIB=OFF" )))
        ((#:phases phases)
         #~(modify-phases #$phases
             (add-after 'build 'mpi-setup
-              #$%openmpi-setup)))))
+              #$%openmpi-setup)
+            (add-after 'unpack 'skip-sloppy-tests
+              (lambda _
+                ;; XXX: The three tests below often fail for no clear reason
+                ;; (timeout or actual failure).  Comment them out (there's one
+                ;; test per line in this file).
+                (substitute* "testpar/CMakeLists.txt"
+                  (("(t_pmulti_dset|t_shapesame|t_filters_parallel)" _ test)
+                   (string-append "# " test "\n")))))))))
     (synopsis "Management suite for data with parallel IO support")))
 
 (define-public hdf5-blosc
@@ -2571,7 +2664,7 @@ with the provided training tools.")
 (define-public nlopt
   (package
     (name "nlopt")
-    (version "2.7.1")
+    (version "2.10.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -2579,10 +2672,14 @@ with the provided training tools.")
                     (commit (string-append "v" version))))
               (file-name (git-file-name name version))
               (sha256
-               (base32 "1xpdza28i8w441fwv6a5f3qk4zi7ys6ws9fx6kr5ny27dfdz6rr1"))))
+               (base32 "04257r7a1bjmm6hznf9v6fimz2p93dk745sf89wmxzhg3rh0ak44"))
+              (patches
+                (search-patches "nlopt_CMake-Assume-working-c-compiler-597.patch"))))
     (build-system cmake-build-system)
     (arguments
-     `(#:phases
+     `(#:configure-flags
+          (list "-DNLOPT_TESTS=ON")
+      #:phases
        (modify-phases %standard-phases
          (add-before 'configure 'set-libnlopt-file-name
            (lambda* (#:key outputs #:allow-other-keys)
@@ -3264,7 +3361,7 @@ can solve two kinds of problems:
 (define-public octave-cli
   (package
     (name "octave-cli")
-    (version "9.4.0")
+    (version "10.2.0")
     (source
      (origin
        (method url-fetch)
@@ -3272,7 +3369,7 @@ can solve two kinds of problems:
                            version ".tar.xz"))
        (sha256
         (base32
-         "0gbvrcblz6akpgm1vls7qjk97imq3j65pasd4jx9b7zpks813ygz"))))
+         "0szpna905qz9fskpnmc4sv4xpna2a2rkxs22d20nx1l16gwb1869"))))
     (build-system gnu-build-system)
     (inputs
      (list alsa-lib
@@ -3608,13 +3705,13 @@ ASCII text files using Gmsh's own scripting language.")
 (define-public veusz
   (package
     (name "veusz")
-    (version "3.6.2")
+    (version "4.1")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "veusz" version))
        (sha256
-        (base32 "1lcmcfr0dcam8g1fp5qip8jnxglxx7i62ln3ix6l4c2bbv21l5y2"))))
+        (base32 "0idg249sg367rxp69nwpsib5dwb0bbznb8hak004573ygc7dmd5k"))))
     (build-system pyproject-build-system)
     (arguments
      (list
@@ -3623,8 +3720,8 @@ ASCII text files using Gmsh's own scripting language.")
       #:tests? #f
       #:phases
       #~(modify-phases %standard-phases
-          ;; Veusz uses python's site-packages to look for pyqt5_include_dir.
-          (add-after 'unpack 'fix-pyqt5-include-dir
+          ;; Veusz uses python's site-packages to look for pyqt6_include_dir.
+          (add-after 'unpack 'fix-pyqt6-include-dir
             (lambda _
               (substitute* "pyqt_setuptools.py"
                 (("get_path\\('platlib'\\)")
@@ -3645,23 +3742,23 @@ ASCII text files using Gmsh's own scripting language.")
                            (list #$(this-package-input "qtbase")
                                  #$(this-package-input "qtsvg")
                                  #$(this-package-input "qtwayland"))
-                           "/lib/qt5/plugins:")
-                          "/lib/qt5/plugins")))))))))
+                           "/lib/qt6/plugins:")
+                          "/lib/qt6/plugins")))))))))
     (native-inputs
      (list pkg-config
            python-astropy
            python-setuptools
            python-wheel
-           qttools-5))
+           qttools))
     (inputs
      (list bash-minimal
            ghostscript ;optional, for EPS/PS output
            python-dbus
            python-h5py ;optional, for HDF5 data
-           python-pyqt
-           qtbase-5
-           qtsvg-5
-           qtwayland-5))
+           python-pyqt-6
+           qtbase
+           qtsvg
+           qtwayland))
     (propagated-inputs
      (list python-numpy))
     (home-page "https://veusz.github.io/")
@@ -4043,7 +4140,7 @@ functions.")
 (define-public primecount
   (package
     (name "primecount")
-    (version "7.14")
+    (version "7.19")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -4052,7 +4149,7 @@ functions.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "097p3wfq6ds56275cra678hzg8cp2vd1ccllsi8wczrf0qvq91rp"))))
+                "1yjqk0q04d8kqkal5vahyfgwas1sz8h3scmk27sr128jcc1cvcx6"))))
     (build-system cmake-build-system)
     (arguments
      (list #:configure-flags #~(list "-DBUILD_LIBPRIMESIEVE=OFF"
@@ -4074,7 +4171,7 @@ optimized implementations of the combinatorial prime counting algorithms.")
 (define-public primesieve
   (package
     (name "primesieve")
-    (version "12.3")
+    (version "12.9")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -4083,7 +4180,7 @@ optimized implementations of the combinatorial prime counting algorithms.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1lxvs1jgch0zgpa5axx6zlvgab4rmm3lqpbah75072xpj8ndhhld"))))
+                "0y81k9ql0mcd43vsli2a5z0d76p9mkz0dlddksvvrid41qqsjhf4"))))
     (build-system cmake-build-system)
     (arguments
      (list #:configure-flags #~(list "-DBUILD_STATIC_LIBS=off"
@@ -4481,19 +4578,22 @@ bindings to almost all functions of PETSc.")
 (define-public python-primecountpy
   (package
     (name "python-primecountpy")
-    (version "0.1.0")
+    (version "0.1.1")
     (source
      (origin
-       (method url-fetch)
-       (uri (pypi-uri "primecountpy" version))
+       (method git-fetch) ; Fetch from GitHub to avoid precompiled files
+       (uri (git-reference
+             (url "https://github.com/dimpase/primecountpy")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
        (sha256
-        (base32 "0xh6zx5zw5scy7jygqirks9y6z4zyfm0zjfp8nd6dw0m471przkq"))))
+        (base32 "0pdmdch5fhzcclrdnb4z3n4a9f00iqr65yzpkhjpz5a6mbz3l5v8"))))
     (build-system pyproject-build-system)
     (arguments
      (list #:tests? #f)) ; there are no tests
     (native-inputs
      (list python-cysignals
-           python-cython
+           python-cython-3
            python-setuptools
            python-wheel))
     (inputs
@@ -4877,18 +4977,15 @@ language understood by many solvers.")
 (define-public mumps
   (package
     (name "mumps")
-    (version "5.5.1")
+    (version "5.8.0")
     (source
      (origin
        (method url-fetch)
-       (uri (list (string-append "http://mumps.enseeiht.fr/MUMPS_"
-                                 version ".tar.gz")
-                  (string-append
-                   "https://ftp.mcs.anl.gov/pub/petsc/externalpackages"
-                   "/MUMPS_" version ".tar.gz")))
+       (uri (string-append "https://mumps-solver.org/MUMPS_" version
+                           ".tar.gz"))
        (sha256
         (base32
-         "05gs2i8b76m9flm1826fxpyfnwibjjawbmfza3ylrvj7zaag5gqs"))))
+         "18208d3klhv08p4kgbbp332wf11x0iyi7z4c7fcs0hwq3n5ynqnp"))))
     (build-system gnu-build-system)
     (inputs
      (list gfortran
@@ -4951,7 +5048,9 @@ OPTL          = -O2 -fopenmp $(PIC)
 OPTC          = -O2 -fopenmp $(PIC)
 LPORDDIR      = $(topdir)/PORD/lib
 IPORD         = -I$(topdir)/PORD/include
-LPORD         = $(LPORDDIR)/libpord.a
+LPORD         = -L$(LPORDDIR)  -lpord
+SONAME        = -soname
+SHARED_OPT    = -shared
 ORDERINGSF    = -Dpord~@[
 METISDIR      = ~a
 IMETIS        = -I$(METISDIR)/include
@@ -5024,7 +5123,7 @@ IORDERINGSC   = $(IPORD) $(IMETIS) $(ISCOTCH)"
                (when (file-exists? "libseq/libmpiseq.so")
                  (install-file "libseq/libmpiseq.so" libdir))
                #t))))))
-    (home-page "http://mumps.enseeiht.fr")
+    (home-page "https://mumps-solver.org")
     (synopsis "Multifrontal sparse direct solver")
     (description
      "MUMPS (MUltifrontal Massively Parallel sparse direct Solver) solves a
@@ -7152,7 +7251,7 @@ This package contains all of the above-mentioned parts.
 (define-public cglm
   (package
     (name "cglm")
-    (version "0.8.4")
+    (version "0.9.6")
     (source
      (origin
        (method git-fetch)
@@ -7161,7 +7260,7 @@ This package contains all of the above-mentioned parts.
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0zgckh56vcdar3a4n51r84wrizyd2ssqal4nsvxd4qdjm0rvb4h0"))))
+        (base32 "1b04zdypa8clhpzg95h8m8xjylk8y5pw9kfn4jv19qlz5bsz183i"))))
     (build-system meson-build-system)
     (arguments
      `(#:configure-flags '("-Dbuild_tests=true")))
@@ -9825,6 +9924,38 @@ diagrams.")
 symbolic reasoning engines that need to reason about polynomial constraints.")
    (license license:lgpl3+)))
 
+(define-public libtaylor
+  ;; Project proves no release or tagged versions, use the latest commit.
+  (let ((commit "88709f03efda5b81ff460ccef67d4fd0e7d050cc")
+        (revision "0"))
+    (package
+      (name "libtaylor")
+      (version (git-version "0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/uekstrom/libtaylor")
+               (commit commit)))
+         (file-name (git-file-name name commit))
+         (sha256
+          (base32 "17gp97vqlpmigf1rf1f5s8lavcswfvpyvqnxxjpdrz5dw9f51y6f"))))
+      (build-system cmake-build-system)
+      (arguments
+       '(#:phases
+         (modify-phases %standard-phases
+           (delete 'check)
+           (add-after 'install 'check
+             (lambda* (#:key tests? #:allow-other-keys #:rest args)
+               (when tests?
+                 (apply (assoc-ref %standard-phases 'check) args)))))))
+      (home-page "https://github.com/uekstrom/libtaylor")
+      (synopsis "C++ library for automatic differentiation")
+      (description
+       "This is a header-only C++ library for calculating analytical
+derivatives and taylor expansions of composite functions.")
+      (license license:expat))))
+
 (define-public lingeling
   (package
     (name "lingeling")
@@ -10623,7 +10754,7 @@ computation is supported via MPI.")
 (define-public scilab
   (package
     (name "scilab")
-    (version "2025.0.0")
+    (version "2025.1.0")
     (source
      (origin
        (method git-fetch)
@@ -10633,7 +10764,7 @@ computation is supported via MPI.")
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "1zn31mby7rwxsnkg91rp92ixhj785hw459krw9k2prs2cxqpn6j5"))
+         "1db23hla27lfrf1qvk3p4465qqizxb1a6qkjh4k6rzdxgvxdbxng"))
        (patches (search-patches "scilab-better-compiler-detection.patch"
                                 "scilab-tbx_build_help.patch"))
        (modules '((guix build utils)
@@ -10720,6 +10851,7 @@ computation is supported via MPI.")
                   matio
                   ocaml-num
                   openblas
+                  rapidjson
                   readline
                   suitesparse
                   tcl

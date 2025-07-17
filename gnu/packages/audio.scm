@@ -53,6 +53,7 @@
 ;;; Copyright © 2025 Junker <dk@junkeria.club>
 ;;; Copyright © 2025 Sughosha <sughosha@disroot.org>
 ;;; Copyright © 2025 Andrew Wong <wongandj@icloud.com>
+;;; Copyright © 2025 Kjartan Oli Agustsson <kjartanoli@outlook.com>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -360,6 +361,51 @@ implementation of WebRTC.")
      "https://freedesktop.org/software/pulseaudio/webrtc-audio-processing/")
     (license (license:non-copyleft "file:///COPYING"))))
 
+;; webrtc-audio-processing doesn't a have stable API, so we need to multiple
+;; versions of it.
+(define-public webrtc-audio-processing-0.3
+  (package
+    (inherit webrtc-audio-processing)
+    (version "0.3.1")
+    (source
+     (origin
+       (method url-fetch)
+       (uri
+        (string-append "http://freedesktop.org/software/pulseaudio/"
+                       "webrtc-audio-processing/webrtc-audio-processing-"
+                       version ".tar.xz"))
+       (sha256
+        (base32 "1gsx7k77blfy171b6g3m0k0s0072v6jcawhmx1kjs9w5zlwdkzd0"))
+       (patches (search-patches "webrtc-audio-processing-big-endian.patch"))))
+    (build-system gnu-build-system)
+    (arguments
+     (if (or (target-riscv64?)
+             (target-powerpc?))
+         (list
+          #:phases
+          #~(modify-phases %standard-phases
+              (add-after 'unpack 'patch-source
+                (lambda* (#:key inputs #:allow-other-keys)
+                  (substitute* "webrtc/typedefs.h"
+                    (("defined\\(__aarch64__\\)" all)
+                     (string-append
+                      ;; powerpc-linux
+                      "(defined(__PPC__) && __SIZEOF_SIZE_T__ == 4)\n"
+                      "#define WEBRTC_ARCH_32_BITS\n"
+                      "#define WEBRTC_ARCH_BIG_ENDIAN\n"
+                      ;; powerpc64-linux
+                      "#elif (defined(__PPC64__) && defined(_BIG_ENDIAN))\n"
+                      "#define WEBRTC_ARCH_64_BITS\n"
+                      "#define WEBRTC_ARCH_BIG_ENDIAN\n"
+                      ;; aarch64-linux
+                      "#elif " all
+                      ;; riscv64-linux
+                      " || (defined(__riscv) && __riscv_xlen == 64)"
+                      ;; powerpc64le-linux
+                      " || (defined(__PPC64__) && defined(_LITTLE_ENDIAN))")))))))
+         '()))
+    (native-inputs (list pkg-config))))
+
 (define-public vo-aacenc
   (package
     (name "vo-aacenc")
@@ -407,6 +453,52 @@ Coding (AAC) encoder.")
 Linux kernel.")
     (home-page "https://github.com/tinyalsa/tinyalsa")
     (license (license:non-copyleft "file:///NOTICE"))))
+
+(define-public fmsynth-lv2
+  (let ((commit "b989b5c0efd46b312ce4edd89808d34dc5135bb4")
+        (revision "0"))
+    (package
+      (name "fmsynth-lv2")
+      (version (git-version "0.0.0" revision commit))
+      (source (origin
+                (method git-fetch)
+                (uri (git-reference
+                      (url "https://github.com/Themaister/libfmsynth")
+                      (commit commit)))
+                (file-name (git-file-name name version))
+                (sha256
+                 (base32
+                  "0nck4ih0rxyr8b2vw6m119lybfnmzmas859m784i73ind3rcy44k"))))
+      (properties '((tunable? . #true)))
+      (build-system gnu-build-system)
+      (arguments
+       (list
+        #:tests? #false                 ;no check target
+        #:make-flags
+        #~(list "CC=gcc"
+                (string-append "INSTALL_DIR=" #$output "/lib/lv2"))
+        #:phases
+        #~(modify-phases %standard-phases
+            (add-after 'unpack 'do-not-tune
+              (lambda _
+                (substitute* "GNUmakefile"
+                  (("-march=native") ""))))
+            (add-after 'do-not-tune 'chdir
+              (lambda _ (chdir "lv2")))
+            (add-before 'install 'make-target-directory
+              (lambda _
+                (mkdir-p (string-append #$output "/lib/lv2"))))
+            (delete 'configure))))
+      (inputs (list gtkmm-2 lv2 lvtk))
+      (native-inputs (list pkg-config))
+      (home-page "https://github.com/Themaister/libfmsynth")
+      (synopsis "Frequency modulation synthesizer plugin")
+      (description
+       "fmsynth is an LV2 plugin which implements an @dfn{FM} (Frequency
+Modulation) synthesizer.  Unlike most FM synth implementations in software,
+this FM synthesizer does not aim to emulate or replicate a particular
+synth (like DX7) or FM chip.")
+      (license license:expat))))
 
 (define-public libgme
   (package
@@ -1369,7 +1461,7 @@ tools.")
      (list alsa-lib))
     (home-page "https://audiofile.68k.org/")
     (synopsis "Library to handle various audio file formats")
-    (description "This is an open-source version of SGI's audiofile library.
+    (description "This is a free software version of SGI's audiofile library.
 It provides a uniform programming interface for processing of audio data to
 and from audio files of many common formats.
 
@@ -3579,7 +3671,7 @@ files.")
         (sha256
           (base32
             "12wf17abn3psbsg2r2lk0xdnk8n5cd5rrvjlpxjnjfhd09n7qqgm"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
     (propagated-inputs
       (list python-cffi
             python-cython
@@ -3589,9 +3681,12 @@ files.")
             python-python3-midi
             python-soundfile))
     (native-inputs
-     (list libsndfile))
+     (list libsndfile
+           python-setuptools
+           python-wheel))
     (arguments
-     `(#:phases
+     `(#:tests? #f ; There seem to be no tests
+       #:phases
        (modify-phases %standard-phases
          (add-after 'unpack 'fix-versions
            (lambda _
@@ -4065,7 +4160,7 @@ background file post-processing.")
 (define-public supercollider
   (package
     (name "supercollider")
-    (version "3.13.0")
+    (version "3.13.1")
     (source
      (origin
        (method git-fetch)
@@ -4077,7 +4172,7 @@ background file post-processing.")
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "1dkpnaly4m2j41ypy7xj5m2yhbl4ykw3vbnam345z4dk6qhyj9b1"))
+         "0ii3nczg46f2hzgj2fkd418wgkbal54yhh90sza9vr66l1kxlp2s"))
        (modules '((guix build utils)
                   (ice-9 ftw)))
        (snippet
@@ -4133,7 +4228,6 @@ link REQUIRED)"))))))
                    (string-append "Path(\"" scclass-dir "\")"))))))
           (add-after 'patch-scclass-dir 'fix-struct-SOUNDFILE-tag
             (lambda _
-              (display (getcwd)) (newline)
               (substitute* "include/plugin_interface/SC_SndBuf.h"
                 (("SNDFILE_tag")
                  "sf_private_tag"))))
@@ -4697,6 +4791,35 @@ key of digital audio.")
 compression modes.  This package contains command-line programs and library to
 encode and decode wavpack files.")
     (license license:bsd-3)))
+
+(define-public wstsound
+  ;; XXX: Does not release anymore.
+  (let ((commit "289cae8dd2b1e75c447b063a6a4299bf139d4249")
+        (revision "0"))
+    (package
+      (name "wstsound")
+      (version (git-version "0.3.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/WindstilleTeam/wstsound")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "14qgvwwl1jah85adbf7q6r954mpcxnszibjzip90839n2g112zwf"))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        #:configure-flags
+        #~(list "-DBUILD_TESTS=ON")))
+      (native-inputs (list googletest tinycmmc))
+      ;; XXX: CMake-built dependents currently require propagation.
+      (propagated-inputs (list libmodplug libvorbis mpg123 openal opusfile))
+      (home-page "https://github.com/WindstilleTeam/wstsound")
+      (synopsis "C++ sound library")
+      (description "This package provides a simple sound library for C++.")
+      (license license:gpl3+))))
 
 (define-public libmixed
   ;; Release is much outdated.
@@ -5476,7 +5599,7 @@ loudness of audio and video files to the same level.")
               (sha256
                (base32
                 "0zqclskkjb9hfdw9gq6iq4bs9dl1wj9nr8v1jz6s885379q9l8i7"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
     (arguments
        (list
         #:phases
@@ -5490,7 +5613,10 @@ loudness of audio and video files to the same level.")
                                   "\""))))))))
     (inputs (list python-crcmod python-ffmpeg-python python-mutagen
                   python-tqdm ffmpeg))
-    (native-inputs (list python-future python-requests))
+    (native-inputs (list python-future
+                         python-requests
+                         python-setuptools
+                         python-wheel))
     (home-page "https://github.com/desbma/r128gain")
     (synopsis "Fast audio loudness scanner & tagger")
     (description
@@ -5586,18 +5712,19 @@ code, used in @code{libtoxcore}.")
 (define-public python-pyalsaaudio
   (package
     (name "python-pyalsaaudio")
-    (version "0.8.4")
+    (version "0.11.0")
     (source (origin
               (method url-fetch)
               (uri (pypi-uri "pyalsaaudio" version))
               (sha256
                (base32
-                "1180ypn9596rq4b7y7dyv627j1q0fqilmkkrckclnzsdakdgis44"))))
-    (build-system python-build-system)
+                "1p7xw2jrdwwjfnksj97k7hqp4hl7mgsj2kmkcj82qjsj6g59v2m7"))))
+    (build-system pyproject-build-system)
     (arguments
      `(#:tests? #f))                   ; tests require access to ALSA devices.
     (inputs
      (list alsa-lib))
+    (native-inputs (list python-setuptools python-wheel))
     (home-page "https://larsimmisch.github.io/pyalsaaudio/")
     (synopsis "ALSA wrappers for Python")
     (description
@@ -6884,54 +7011,52 @@ device.  There is support for mono and/or stereo and 8 or 16 bit samples.")
     (license license:gpl2)))
 
 (define-public python-pysox
-  ;; PyPi does not include the data folder containing audio files for testing.
-  (let ((commit "3d0053381c24ae3490f759d4de87194b85789d36")
-        (revision "0"))
-    (package
-      (name "python-pysox")
-      (version (git-version "1.4.2" revision commit))
-      (source
-       (origin
-         (method git-fetch)
-         (uri (git-reference
-               (url "https://github.com/rabitt/pysox")
-               (commit commit)))
-         (file-name (git-file-name name version))
-         (sha256
-          (base32
-           "0i62jx92vfpcr2z7lp69yzqdi9idfs3pifl3rzm2akc2c4cr1mac"))))
-      (build-system python-build-system)
-      (arguments
-       `(#:phases
-         (modify-phases %standard-phases
-           (add-after 'unpack 'patch-sox
-             (lambda* (#:key inputs #:allow-other-keys)
-               (let* ((sox-store-path (assoc-ref inputs "sox"))
-                      (sox-bin (string-append sox-store-path "/bin/sox")))
-                 (substitute* "sox/__init__.py"
-                   (("sox -h")
-                    (string-append sox-bin " -h")))
-                 (substitute* "sox/core.py"
-                   (("\\['sox")
-                    (string-append "['" sox-bin))))))
-           (replace 'check
-             (lambda* (#:key inputs outputs tests? #:allow-other-keys)
-               (when tests?
-                 (add-installed-pythonpath inputs outputs)
-                 (invoke "pytest")))))))
-      (propagated-inputs
-       (list python-numpy python-typing-extensions))
-      (native-inputs
-       (list sox python-pytest python-pytest-cov python-soundfile))
-      (home-page "https://github.com/rabitt/pysox")
-      (synopsis "Python wrapper around SoX")
-      (description "@code{python-pysox} is a wrapper around the @command{sox}
-command line tool.  The API offers @code{Transformer} and @code{Combiner}
-classes that allow the user to incrementally build up effects and audio
-manipulations.  @code{python-pysox} also provides methods for querying audio
-information such as sample rate, determining whether an audio file is silent,
-and much more.")
-      (license license:bsd-3))))
+  (package
+    (name "python-pysox")
+    (version "1.5.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/rabitt/pysox")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0039gksdcca5npnfvzy7dqc315f26mcy734la5v3hgvjj84cpcz8"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'patch-sox
+            (lambda _
+              (let* ((sox-store-path #$(this-package-input "sox"))
+                     (sox-bin (string-append sox-store-path "/bin/sox")))
+                (substitute* "sox/__init__.py"
+                  (("sox -h")
+                   (string-append sox-bin " -h")))
+                (substitute* "sox/core.py"
+                  (("\\['sox")
+                   (string-append "['" sox-bin)))))))))
+    (native-inputs
+     (list python-pytest
+           python-soundfile
+           python-setuptools
+           python-wheel))
+    (inputs
+     (list sox))
+    (propagated-inputs
+     (list python-numpy
+           python-typing-extensions))
+    (home-page "https://github.com/rabitt/pysox")
+    (synopsis "Python wrapper around SoX")
+    (description
+     "@code{python-pysox} is a wrapper around the @command{sox} command line
+tool.  The API offers @code{Transformer} and @code{Combiner} classes that
+allow the user to incrementally build up effects and audio manipulations.
+@code{python-pysox} also provides methods for querying audio information such
+as sample rate, determining whether an audio file is silent, and much more.")
+    (license license:bsd-3)))
 
 (define-public python-resampy
   (package

@@ -1997,10 +1997,9 @@ of Guix to the given UID and GID."
                              lstat))
 
          (define (claim-data-ownership uid gid)
-           (format #t "Changing file ownership for /gnu/store \
+           (format #t "Changing file ownership for ~a \
 and data directories to ~a:~a...~%"
-                   uid gid)
-           (change-ownership #$(%store-prefix) uid gid)
+                   #$(%store-prefix) uid gid)
            (let ((excluded '("." ".." "profiles" "userpool")))
              (for-each (lambda (directory)
                          (change-ownership (in-vicinity "/var/guix" directory)
@@ -2012,7 +2011,11 @@ and data directories to ~a:~a...~%"
            (chown "/var/guix" uid gid)
            (change-ownership "/etc/guix" uid gid)
            (mkdir-p "/var/log/guix")
-           (change-ownership "/var/log/guix" uid gid))
+           (change-ownership "/var/log/guix" uid gid)
+
+           ;; Change the store last so that, if this service is interrupted,
+           ;; ownership appears as having yet to be changed.
+           (change-ownership #$(%store-prefix) uid gid))
 
          (match (command-line)
            ((_ (= string->number (? integer? uid))
@@ -3355,14 +3358,16 @@ to CONFIG."
                                              (apply link-set
                                                     (link-id link)
                                                     (alist->keyword+value '#$arguments))
-                                             (format #t (G_ "Interface with name '~a' not found~%") #$name))))
+                                             (format #t "Interface with name '~a' not found~%"
+                                                     #$name))))
                                     ((string? mac-address)
                                      #~(let ((link (match-link-by link-addr #$mac-address)))
                                          (if link
                                              (apply link-set
                                                     (link-id link)
                                                     (alist->keyword+value '#$arguments))
-                                             (format #t (G_ "Interface with mac-address '~a' not found~%") #$mac-address)))))))
+                                             (format #t "Interface with mac-address '~a' not found~%"
+                                                     #$mac-address)))))))
                                 links)
 
                         ;; 'wait-for-link' below could wait forever when
@@ -3949,7 +3954,10 @@ to handle."
   (source-profile? greetd-source-profile? (default #t))
   (default-session-user greetd-default-session-user (default "greeter"))
   (default-session-command greetd-default-session-command
-    (default (greetd-agreety-session))))
+    (default (greetd-agreety-session)))
+  (initial-session-user greetd-initial-session-user (default #f))
+  (initial-session-command greetd-initial-session-command
+    (default #f)))
 
 (define (default-config-file-name config)
   (string-join (list "config-" (greetd-terminal-vt config) ".toml") ""))
@@ -3964,7 +3972,9 @@ to handle."
        (terminal-vt (greetd-terminal-vt config))
        (terminal-switch (greetd-terminal-switch config))
        (default-session-user (greetd-default-session-user config))
-       (default-session-command (greetd-default-session-command config)))
+       (default-session-command (greetd-default-session-command config))
+       (initial-session-user (greetd-initial-session-user config))
+       (initial-session-command (greetd-initial-session-command config)))
     (mixed-text-file
      config-file-name
      "[general]\n"
@@ -3974,7 +3984,13 @@ to handle."
      "switch = " (if terminal-switch "true" "false") "\n"
      "[default_session]\n"
      "user = " default-session-user "\n"
-     "command = " default-session-command "\n")))
+     "command = " default-session-command "\n"
+     (if (and initial-session-user initial-session-command)
+         (string-append
+          "[initial_session]\n"
+          "user = " initial-session-user "\n"
+          "command = " initial-session-command "\n")
+         ""))))
 
 (define %greetd-file-systems
   (list (file-system
@@ -4013,6 +4029,8 @@ to handle."
          (group "greeter")
          (supplementary-groups (greetd-greeter-supplementary-groups config))
          (system? #t)
+         (home-directory "/var/empty")
+         (shell (file-append shadow "/sbin/nologin"))
          (create-home-directory? #f))))
 
 (define (make-greetd-pam-mount-conf-file config)

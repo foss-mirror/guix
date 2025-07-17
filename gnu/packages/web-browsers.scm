@@ -3,7 +3,7 @@
 ;;; Copyright © 2014, 2019 Mark H Weaver <mhw@netris.org>
 ;;; Copyright © 2015, 2016, 2019, 2021-2023, 2025 Efraim Flashner <efraim@flashner.co.il>
 ;;; Copyright © 2016 Kei Kebreau <kkebreau@posteo.net>
-;;; Copyright © 2017, 2024 Eric Bavier <bavier@posteo.net>
+;;; Copyright © 2017, 2024, 2025 Eric Bavier <bavier@posteo.net>
 ;;; Copyright © 2018–2021 Tobias Geerinckx-Rice <me@tobias.gr>
 ;;; Copyright © 2018 Rutger Helling <rhelling@mykolab.com>
 ;;; Copyright © 2018 Timo Eisenmann <eisenmann@fn.de>
@@ -23,6 +23,8 @@
 ;;; Copyright © 2021 Christopher Howard <christopher@librehacker.com>
 ;;; Copyright © 2023 Herman Rimm <herman@rimm.ee>
 ;;; Copyright © 2024 Zheng Junjie <873216071@qq.com>
+;;; Copyright © 2025 Sergey Trofimov <sarg@sarg.org.ru>
+;;; Copyright © 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -45,6 +47,7 @@
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system go)
   #:use-module (guix build-system meson)
+  #:use-module (guix build-system pyproject)
   #:use-module (guix build-system python)
   #:use-module (guix download)
   #:use-module (guix gexp)
@@ -95,6 +98,7 @@
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages python)
   #:use-module (gnu packages python-crypto)
+  #:use-module (gnu packages python-build)
   #:use-module (gnu packages python-web)
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
@@ -134,6 +138,9 @@
        ((guix build cmake-build-system)
         ((guix build glib-or-gtk-build-system) #:prefix glib-or-gtk:)
         (guix build utils))
+       #:configure-flags
+       ;; Relax gcc-14's strictness.
+       '("-DCMAKE_C_FLAGS=-Wno-error=int-conversion")
        #:phases
        (modify-phases %standard-phases
          (add-after 'install 'glib-or-gtk-compile-schemas
@@ -263,7 +270,7 @@ features including, tables, builtin image display, bookmarks, SSL and more.")
       (native-inputs
        (list autoconf
              automake
-             gnu-gettext
+             gettext-minimal
              perl
              pkg-config
              python-minimal))
@@ -539,7 +546,7 @@ interface.")
 (define-public qutebrowser
   (package
     (name "qutebrowser")
-    (version "3.5.0")
+    (version "3.5.1")
     (source
      (origin
        (method git-fetch)
@@ -548,10 +555,12 @@ interface.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "11ir4l4rq86nz2lqj2s31dwc9vm1dcjwqj5sh81c5bg52ccvbbm9"))))
-    (build-system python-build-system)
+        (base32 "0vbd6b5332nd7q9y94zjd1bwdr0gk6pgzvl1ygm274nk5plifdjs"))))
+    (build-system pyproject-build-system)
     (native-inputs
-     (list python-attrs                 ; for tests
+     (list python-setuptools
+           python-wheel
+           python-attrs                      ; for tests
            asciidoc))
     (inputs
      (list bash-minimal
@@ -587,7 +596,7 @@ interface.")
                 (string-append "os.path.join(\""
                                (assoc-ref outputs "out")
                                "\", \"share\", \"qutebrowser\"")))))
-         (add-after 'build 'build-docs
+         (add-before 'build 'build-docs
            (lambda _
                (substitute* "scripts/asciidoc2html.py"
                  (("sys.executable, \"-m\", \"asciidoc\"")
@@ -959,7 +968,7 @@ http, and https via third-party applications.")
      (list autoconf
            automake
            bash-completion
-           gnu-gettext
+           gettext-minimal
            libjpeg-turbo
            imagemagick
            mandoc
@@ -1161,16 +1170,16 @@ Features include
 (define-public edbrowse
   (package
     (name "edbrowse")
-    (version "3.8.10")
+    (version "3.8.12")
     (source
      (origin
        (method git-fetch)
        (uri (git-reference
-             (url "https://github.com/CMB/edbrowse.git")
+             (url "https://github.com/edbrowse/edbrowse")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1rkz3xrx96071xbd9cd6iiqvaiinsf9lfj7s7ahnkp7hywr9whm5"))))
+        (base32 "19wpsil3927qchky5frczlp75fiqir9l2wzfqq95gbpssiafwkpy"))))
     (build-system gnu-build-system)
     (inputs (list curl-ssh pcre2 quickjs openssl readline-7 unixodbc))
     (native-inputs (list perl pkg-config))

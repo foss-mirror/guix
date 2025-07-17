@@ -43,7 +43,7 @@
 ;;; Copyright © 2020 Lars-Dominik Braun <ldb@leibniz-psychology.org>
 ;;; Copyright © 2020 Guy Fleury Iteriteka <gfleury@disroot.org>
 ;;; Copyright © 2020 Michael Rohleder <mike@rohleder.de>
-;;; Copyright © 2020 Vinicius Monego <monego@posteo.net>
+;;; Copyright © 2020, 2025 Vinicius Monego <monego@posteo.net>
 ;;; Copyright © 2020 Vincent Legoll <vincent.legoll@gmail.com>
 ;;; Copyright © 2021, 2024 Sharlatan Hellseher <sharlatanus@gmail.com>
 ;;; Copyright © 2021, 2024 Greg Hogan <code@greghogan.com>
@@ -54,17 +54,18 @@
 ;;; Copyright © 2021 Alexandre Hannud Abdo <abdo@member.fsf.org>
 ;;; Copyright © 2021 Simon Tournier <zimon.toutoune@gmail.com>
 ;;; Copyright © 2021 Foo Chuan Wei <chuanwei.foo@hotmail.com>
-;;; Copyright © 2022 Zhu Zihao <all_but_last@163.com>
+;;; Copyright © 2022, 2025 Zhu Zihao <all_but_last@163.com>
 ;;; Copyright © 2021 Brice Waegeneire <brice@waegenei.re>
 ;;; Copyright © 2022 muradm <mail@muradm.net>
 ;;; Copyright © 2022 Thomas Albers Raviola <thomas@thomaslabs.org>
 ;;; Copyright © 2021, 2022 jgart <jgart@dismail.de>
 ;;; Copyright © 2023, 2024 Felix Gruber <felgru@posteo.net>
 ;;; Copyright © 2023 Munyoki Kilyungi <me@bonfacemunyoki.com>
-;;; Copyright © 2023 Giacomo Leidi <goodoldpaul@autistici.org>
+;;; Copyright © 2023, 2025 Giacomo Leidi <goodoldpaul@autistici.org>
 ;;; Copyright © 2024 Troy Figiel <troy@troyfigiel.com>
 ;;; Copyright © 2024 gemmaro <gemmaro.dev@gmail.com>
 ;;; Copyright © 2025 Ashvith Shetty <ashvithshetty0010@zohomail.in>
+;;; Copyright © 2025 Philippe Swartvagher <phil.swart@gmx.fr>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -161,6 +162,8 @@
   #:use-module (gnu packages regex)
   #:use-module (gnu packages rpc)
   #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages sphinx)
   #:use-module (gnu packages ssh)
@@ -183,6 +186,7 @@
   #:use-module (guix bzr-download)
   #:use-module (guix git-download)
   #:use-module (guix hg-download)
+  #:use-module (guix build-system copy)
   #:use-module (guix build-system emacs)
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system go)
@@ -201,28 +205,23 @@
 (define-public duckdb
   (package
     (name "duckdb")
-    (version "1.1.3")
+    (version "1.3.2")
     (source
-      (origin
+     (origin
        (method git-fetch)
        (uri (git-reference
              (url "https://github.com/duckdb/duckdb")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32
-         "1b57r4x1lnkdiv0f8r0wyhbil61l9gp1ipr37i12s0x6dv19lxi2"))
-       (modules '((guix build utils)))
-       (snippet
-        #~(begin
-            ;; There is no git checkout from which to read the version tag.
-            (substitute* "CMakeLists.txt"
-              (("set\\(DUCKDB_VERSION \"[^\"]*\"")
-               (string-append "set(DUCKDB_VERSION \"v" #$version "-dev0\"")))))))
+        (base32 "1dg3g66az17z4snxxw7cslqdkrvbx2nnyry73yi77yp0vpri1lz8"))))
     (arguments
      (list
       #:configure-flags
-      '(list "-DBUILD_EXTENSIONS=autocomplete;fts;icu;json;parquet;tpch;")))
+      #~(list "-DBUILD_EXTENSIONS=autocomplete;icu;json;parquet;tpch;"
+              ;; There is no git checkout from which to read the version tag.
+              (string-append "-DOVERRIDE_GIT_DESCRIBE="
+                             "v" #$version "-0-g0123456789"))))
     (build-system cmake-build-system)
     (home-page "https://duckdb.org")
     (synopsis "In-process SQL OLAP database management system")
@@ -490,7 +489,7 @@ database later.")
 (define-public dicedb
   (package
     (name "dicedb")
-    (version "1.0.3")
+    (version "1.0.10")
     (source
      (origin
        (method git-fetch)
@@ -499,7 +498,7 @@ database later.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "19hkr2sqb5vcyrxb17y8586aa9amw2nny2fia7yf2lshigg03va5"))
+        (base32 "1f9qsqmv41ikkrb5pfrh3b7cv3x82yzq7m3p2d3iml9azbmxvkyy"))
        (patches (search-patches "dicedb-remove-init-from-config-subpkg.patch"))))
     (build-system go-build-system)
     (arguments
@@ -508,11 +507,10 @@ database later.")
       #:install-source? #f
       #:import-path "github.com/dicedb/dice"
       #:build-flags
-      #~(list (format #f "-ldflags=-X config.DiceDBVersion=v~a"
+      #~(list (format #f "-ldflags=-X github.com/dicedb/dice/config.DiceDBVersion=v~a"
                       #$version))
       #:test-subdirs
-      #~(list "internal/auth/..."
-              ;; "internal/clientio/..." ; matched no packages
+      #~(list ;; "internal/auth/..." ; build failed
               "internal/cmd/..."
               "internal/comm/..."
               "internal/common/..."
@@ -525,56 +523,52 @@ database later.")
               "internal/object/..."
               "internal/observability/..."
               "internal/ops/..."
-              "internal/querymanager/..."
               "internal/regex/..."
               "internal/server/..."
               "internal/shard/..."
-              ;; "internal/sql/..." ; matched no packages
-              ;; "internal/store/..." ; build failed
+              "internal/shardmanager/..."
+              "internal/shardthread/..."
+              "internal/store/..."
+              "internal/types/..."
               "internal/wal/..."
-              "internal/watchmanager/..."
-              ;; "internal/worker/..." ; matched no packages
-              )
-      #:test-flags
-      #~(list "-skip"
-              (string-join (list "TestSessionIsActive" "TestSessionActivate"
-                                 "TestSessionValidate" "TestDEL") "|"))
+              "internal/watchmanager/...")
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'remove-example
             (lambda* (#:key tests? import-path #:allow-other-keys)
               (with-directory-excursion (string-append "src/" import-path)
                 (delete-file-recursively "examples")))))))
-    (propagated-inputs (list go-google-golang-org-protobuf
-                             go-golang-org-x-crypto
-                             go-github-com-twmb-murmur3
-                             go-github-com-stretchr-testify
-                             go-github-com-spf13-viper
-                             go-github-com-spf13-pflag
-                             go-github-com-spf13-cobra
-                             go-github-com-rs-zerolog
-                             go-github-com-rs-xid
-                             go-github-com-ohler55-ojg
-                             go-github-com-mmcloughlin-geohash
-                             go-github-com-google-uuid
-                             go-github-com-google-go-cmp
-                             go-github-com-google-btree
-                             go-github-com-gobwas-glob
-                             go-github-com-dicedb-dicedb-go
-                             go-github-com-dgryski-go-farm
-                             go-github-com-cespare-xxhash-v2
-                             go-github-com-bytedance-sonic
-                             go-github-com-axiomhq-hyperloglog
-                             go-gotest-tools-v3))
+    (native-inputs
+     (list go-github-com-axiomhq-hyperloglog
+           go-github-com-bytedance-sonic
+           go-github-com-cespare-xxhash-v2
+           go-github-com-dgryski-go-farm
+           go-github-com-dicedb-dicedb-go
+           go-github-com-gobwas-glob
+           go-github-com-google-btree
+           go-github-com-google-go-cmp
+           go-github-com-google-uuid
+           go-github-com-mmcloughlin-geohash
+           go-github-com-ohler55-ojg
+           go-github-com-rs-xid
+           go-github-com-rs-zerolog
+           go-github-com-spf13-cobra
+           go-github-com-spf13-pflag
+           go-github-com-spf13-viper
+           go-github-com-stretchr-testify
+           go-github-com-twmb-murmur3
+           go-github-com-wangjia184-sortedset
+           go-golang-org-x-crypto
+           go-google-golang-org-protobuf
+           go-gotest-tools-v3))
     (home-page "https://github.com/dicedb/dice")
-    (synopsis
-     "Fast, reactive, in-memory database optimized for modern hardware")
+    (synopsis "Fast, reactive, in-memory database optimized for modern hardware")
     (description
-     "@code{dicedb} is a fast, reactive, in-memory database optimized
-for modern hardware.  Commonly used as a cache, it offers a familiar interface
-while enabling real-time data updates through query subscriptions.  It delivers
-higher throughput and lower median latencies, making it ideal for modern
-workloads.")
+     "@code{dicedb} is a fast, reactive, in-memory database optimized for
+modern hardware.  Commonly used as a cache, it offers a familiar interface
+while enabling real-time data updates through query subscriptions.  It
+delivers higher throughput and lower median latencies, making it ideal for
+modern workloads.")
     (license license:bsd-3)))
 
 (define-public leveldb
@@ -809,14 +803,31 @@ replacement for the @code{python-memcached} library.")
 (define-public litecli
  (package
   (name "litecli")
-  (version "1.9.0")
+  (version "1.15.0")
   (source
    (origin
      (method url-fetch)
      (uri (pypi-uri "litecli" version))
      (sha256
-      (base32 "1897divrdqlhl1p5jvvm29rg3d99f48s58na7hgdzm1x13x2rbr1"))))
-  (build-system python-build-system)
+      (base32 "0yfdafh21k8fls85rgyfn03xxn6x5hqcnmlq1v3jvmxjaxzrk19j"))))
+  (build-system pyproject-build-system)
+  (arguments
+   (list
+    ;; These tests depend on python-llm (not packaged)
+    #:test-flags #~(list "-k" (string-append
+                               "not test_refresh_called_once"
+                               " and not test_refresh_called_twice"
+                               " and not test_refresh_with_callbacks"
+                               " and not test_llm_command_known_subcommand"))
+    #:phases #~(modify-phases %standard-phases
+                 (add-after 'unpack 'relax-sqlparse
+                   (lambda _
+                     (substitute* "pyproject.toml"
+                       ;; Currently we have 0.4.3 and it is fine.  Remove this
+                       ;; line when sqlparse is updated.
+                       (("sqlparse>=0.4.4") "sqlparse")
+                       ;; Also remove python-pip from sanity-check.
+                       (("\"pip\",") "")))))))
   (propagated-inputs
    (list python-cli-helpers
          python-click
@@ -825,7 +836,7 @@ replacement for the @code{python-memcached} library.")
          python-pygments
          python-sqlparse))
   (native-inputs
-   (list python-mock python-pytest))
+   (list python-pytest python-setuptools python-wheel))
   (home-page "https://litecli.com")
   (synopsis "CLI for SQLite databases")
   (description
@@ -836,16 +847,23 @@ auto-completion and syntax highlighting.")
 (define-public python-pgspecial
   (package
     (name "python-pgspecial")
-    (version "1.13.0")
+    (version "2.2.1")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "pgspecial" version))
        (sha256
-        (base32 "00ddkf565rjcxmfml1z4mmkns1aq8x5s5g85xmnz2scln42y4irq"))))
-    (build-system python-build-system)
-    (propagated-inputs
-     (list python-click python-sqlparse python-psycopg2))
+        (base32 "17c4qjvi83b3im9fb00cdzzb24v5xis6y1625l9v0yzggg67yv6s"))))
+    (build-system pyproject-build-system)
+    (native-inputs (list python-pytest
+                         python-setuptools
+                         python-setuptools-scm
+                         python-wheel))
+    (propagated-inputs (list python-click
+                             python-configobj
+                             python-psycopg
+                             python-sqlparse
+                             python-typing-extensions))
     (home-page "https://github.com/dbcli/pgspecial")
     (synopsis
      "Python implementation of PostgreSQL meta commands (backslash commands)")
@@ -889,27 +907,30 @@ multi-thread access.")
 (define-public pgcli
   (package
     (name "pgcli")
-    (version "3.2.0")
+    (version "4.3.0")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "pgcli" version))
        (sha256
-        (base32 "1dy6yzak696107pqv83296h0xhc3ahlfaydm80593gwn37krgpkc"))))
-    (build-system python-build-system)
+        (base32 "1vva1fi5sqrdvmx7jmdjmy8zwly22sbsj5lzy60s822m1iay2nkn"))))
+    (build-system pyproject-build-system)
+    (arguments
+     ;; AttributeError: 'NoneType' object has no attribute 'kwargs'.
+     (list #:test-flags #~(list "-k" "not test_application_name_in_env")))
     (propagated-inputs
      (list python-cli-helpers
            python-click
            python-configobj
-           python-pendulum
            python-pgspecial
            python-prompt-toolkit
-           python-psycopg2
+           python-psycopg
            python-pygments
            python-setproctitle
-           python-sqlparse))
+           python-sqlparse
+           python-tzlocal))
     (native-inputs
-     (list python-ipython-sql))
+     (list python-pytest python-setuptools python-sshtunnel python-wheel))
     (home-page "https://www.pgcli.com")
     (synopsis "PostgreSQL CLI with autocompletion and syntax highlighting")
     (description
@@ -1754,6 +1775,66 @@ Store your vectors with the rest of your data.  It supports:
      "@code{pgloader} is a program that can load data or migrate databases from
 CSV, DB3, iXF, SQLite, MS-SQL or MySQL to PostgreSQL.")
     (license (license:x11-style "file://LICENSE"))))
+
+(define-public postgresql-backup-scripts
+  (package
+    (name "postgresql-backup-scripts")
+    (version "0.0.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url (string-append "https://codeberg.org/fishinthecalculator/"
+                                 "postgresql-backup-scripts"))
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0ig19345p9h2z56k07i6g94pls2b4fhxacf1i8f0hxvk2p4x730k"))))
+    (build-system copy-build-system)
+    (arguments
+     (list
+      #:install-plan #~'(("./src/" "/bin")
+                         ("./examples" "/share/examples"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'install 'chmod
+            (lambda _
+              (for-each
+               (lambda (file) (chmod file #o755))
+               (find-files (string-append #$output "/bin")))))
+          (add-after 'chmod 'wrap
+            (lambda _
+              (let* ((bin (string-append #$output "/bin"))
+                     (inputs
+                      (list
+                       #$@(map cadr
+                               (package-inputs this-package))))
+                     (lib-directories (search-path-as-list '("lib") inputs))
+                     (bin-directories
+                      (search-path-as-list
+                       '("bin" "sbin" "libexec")
+                       inputs)))
+                (for-each
+                 (lambda (exe)
+                   (wrap-program exe
+                     `("PATH" ":" prefix
+                       (,(string-join bin-directories ":")))
+                     `("LD_LIBRARY_PATH" ":" prefix
+                       (,(string-join lib-directories ":")))))
+                 (find-files bin))))))))
+    (inputs
+     (list coreutils
+           bash-minimal
+           findutils
+           postgresql))
+    (home-page "https://codeberg.org/fishinthecalculator/postgresql-backup-scripts")
+    (synopsis "Utility scripts for PostgreSQL backups")
+    (description
+     "This package provides two scripts that will backup PostgreSQL databases in
+a cluster.  They are supposed to be run in scheduled jobs.  @code{pg_backup.sh}
+runs regular backups, @code{pg_backup_rotated.sh} runs rotated backups.")
+    (license
+     (license:x11-style "file://LICENSE"))))
 
 (define-public python-pymysql
   (package
@@ -2972,6 +3053,111 @@ sets, bitmaps and hyperloglogs.")
     ;; These two CVEs have long been fixed.
     (properties `((lint-hidden-cve . ("CVE-2022-3647" "CVE-2022-33105"))))
     (license license:bsd-3)))
+
+(define-public valkey-7
+  (package
+    (name "valkey")
+    ;; For compatibility, keep in sync with redis version.
+    (version "7.2.6")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/valkey-io/valkey")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "01pbaprl6nwrwv9382i033w8sslqainws0b22b3l1lzladdawrwx"))
+       (modules '((guix build utils)))
+       (snippet
+        ;; Delete bundled jemalloc, as the package will use the libc one
+        #~(begin (delete-file-recursively "deps/jemalloc")))))
+    (build-system gnu-build-system)
+    (arguments
+     (list #:make-flags
+           #~(list (string-append "CC=" #$(cc-for-target))
+                   "MALLOC=libc"
+                   (string-append "PREFIX=" #$output))
+           #:phases
+           #~(modify-phases %standard-phases
+               (delete 'configure)
+               (add-after 'unpack 'patch-paths
+                 (lambda _
+                   (substitute* "runtest"
+                     (("^TCLSH=.*")
+                      (string-append "TCLSH=" (which "tclsh"))))
+                   (substitute* "tests/support/server.tcl"
+                     (("/usr/bin/env")
+                      (which "env")))))
+               (add-after 'unpack 'adjust-tests
+                 (lambda _
+                   ;; Disable failing tests.
+                   (substitute* "tests/test_helper.tcl"
+                     ;; The AOF tests cause the test suite to hang waiting for a
+                     ;; "background AOF rewrite to finish", perhaps because dead
+                     ;; processes persist as zombies in the build environment.
+                     (("unit/aofrw") "")
+                     (("integration/aof([^-]|-multi-part)") "")
+                     ;; The OOM score tests try to raise the current OOM score,
+                     ;; but our build environment already sets it for all
+                     ;; children to the highest possible one (1000).  We can't
+                     ;; lower it because we don't have CAP_SYS_RESOURCE.
+                     (("unit/oom-score-adj") "")
+
+                     (("integration/failover") "")
+                     (("integration/replication[^-]") "")))))))
+    (native-inputs (list pkg-config procps tcl which))
+    (home-page "https://valkey.io/")
+    (synopsis "High-performance key-value datastore")
+    (description
+     "Valkey is a high-performance key-value datastore that supports a variety
+of workloads such as caching, message queues, and can act as a primary
+database.")
+    (license license:bsd-3)))
+
+(define-public valkey-8
+  (package
+    (inherit valkey-7)
+    (name "valkey")
+    (version "8.1.1")
+    (source
+     (origin
+       (inherit (package-source valkey-7))
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/valkey-io/valkey")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1n5ckpa1h87h1llnm4khyf6060gqd4pj43d93vlrvn3hxpdyji8b"))))
+    (arguments
+     (substitute-keyword-arguments (package-arguments valkey-7)
+       ((#:phases phases '%standard-phases)
+        #~(modify-phases #$phases
+            (replace 'adjust-tests
+              (lambda _
+                ;; Disable failing tests.
+                ;; Valkey search test directories for tests.
+                (with-directory-excursion "tests"
+                  ;; The AOF tests cause the test suite to hang waiting for a
+                  ;; "background AOF rewrite to finish", perhaps because dead
+                  ;; processes persist as zombies in the build environment.
+                  (delete-file "unit/aofrw.tcl")
+                  (delete-file "integration/aof-multi-part.tcl")
+
+                  ;; The OOM score tests try to raise the current OOM score, but
+                  ;; our build environment already sets it for all children to
+                  ;; the highest possible one (1000).  We can't lower it because
+                  ;; we don't have CAP_SYS_RESOURCE.
+                  (delete-file "unit/oom-score-adj.tcl")
+
+                  (for-each delete-file
+                            (find-files "integration"
+                                        (string-join
+                                         '("^failover\\.tcl$"
+                                           "^replication"
+                                           "replication\\.tcl$")
+                                         "|"))))))))))))
 
 (define-public hiredis
   (package
@@ -5819,6 +6005,105 @@ compatible with SQLite using a graphical user interface.")
      ;; dual license
      (list license:gpl3+
            license:mpl2.0))))
+
+(define-public sqlitestudio
+  (package
+    (name "sqlitestudio")
+    (version "3.4.17")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/pawelsalawa/sqlitestudio")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1zb1qr88rwkzmrxc0lm99x8h99hpn5c2wfdpvqzs9f9ph8qvasww"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'configure
+            (lambda* (#:key inputs outputs #:allow-other-keys)
+              (let* ((out (assoc-ref outputs "out"))
+                     (python-version #$(version-major+minor (package-version
+                                                             python)))
+                     (python-include (string-append (assoc-ref inputs "python")
+                                                    "/include/python"
+                                                    python-version)))
+                (invoke "qmake"
+                        (string-append "QMAKE_LFLAGS_RPATH=-Wl,-rpath," out
+                                       "/lib:")
+                        (string-append "PREFIX=" out) "./SQLiteStudio3")
+                (mkdir-p "Plugins")
+                (with-directory-excursion "Plugins"
+                  (invoke "qmake"
+                          (string-append "QMAKE_LFLAGS_RPATH=-Wl,-rpath," out
+                                         "/lib:")
+                          (string-append "PREFIX=" out)
+                          (string-append "INCLUDEPATH+=" python-include)
+                          (string-append "PYTHON_VERSION=" python-version)
+                          ".")))))
+          (replace 'build
+            (lambda _
+              (invoke "make" "-j"
+                      (number->string (parallel-job-count)))
+              (with-directory-excursion "Plugins"
+                (invoke "make")))) ;building plugins in parallel corrupts them
+          (replace 'install
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let* ((out (assoc-ref outputs "out"))
+                     (icons-dir (string-append out "/share/icons/hicolor/"))
+                     (src-img-dir (string-append
+                                   "SQLiteStudio3/guiSQLiteStudio/img/")))
+                (invoke "make" "-j"
+                        (number->string (parallel-job-count)) "install")
+                (for-each (lambda (size)
+                            (let ((target-dir (string-append icons-dir size
+                                                             "x" size "/apps/")))
+                              (mkdir-p target-dir)
+                              (copy-file (string-append src-img-dir
+                                                        "sqlitestudio_" size
+                                                        ".png")
+                                         (string-append target-dir
+                                                        "sqlitestudio.png"))))
+                          '("16" "48" "256"))
+                (let ((target-dir (string-append icons-dir "scalable/apps/")))
+                  (mkdir-p target-dir)
+                  (install-file (string-append src-img-dir "sqlitestudio.svg")
+                                target-dir))
+                (with-directory-excursion "Plugins"
+                  (invoke "make" "-j"
+                          (number->string (parallel-job-count)) "install")))))
+          (add-after 'install 'install-desktop
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let* ((out (assoc-ref outputs "out")))
+                (make-desktop-entry-file (string-append out
+                                          "/share/applications/"
+                                          #$name ".desktop")
+                                         #:name "SQLiteStudio"
+                                         #:comment #$(package-synopsis
+                                                      this-package)
+                                         #:exec (string-append #$name " %f")
+                                         #:icon #$name
+                                         #:categories '("Development"
+                                                        "Utility" "Database")
+                                         #:mime-type "application/vnd.sqlite3")))))))
+    (inputs (list openssl
+                  python
+                  qtbase-5
+                  qtsvg-5
+                  readline
+                  sqlite-next))
+    (native-inputs (list python qttools-5 qtdeclarative-5 tcl))
+    (home-page "https://sqlitestudio.pl/")
+    (synopsis "Graphical user interface to browse and edit SQLite databases")
+    (description
+     "SQLiteStudio is desktop application for browsing and editing SQLite
+database files.  It is aimed for people, who know what SQLite is, or what
+relational databases are in general.")
+    (license license:gpl3+)))
 
 (define-public sqls
   (package

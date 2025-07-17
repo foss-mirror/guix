@@ -1,5 +1,5 @@
 ;;; GNU Guix --- Functional package management for GNU
-;;; Copyright © 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2022, 2023, 2024 Andreas Enge <andreas@enge.fr>
+;;; Copyright © 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2022, 2023, 2024, 2025 Andreas Enge <andreas@enge.fr>
 ;;; Copyright © 2013, 2015, 2017, 2018, 2021 Ludovic Courtès <ludo@gnu.org>
 ;;; Copyright © 2016-2025 Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;;; Copyright © 2014, 2018 Mark H Weaver <mhw@netris.org>
@@ -18,6 +18,7 @@
 ;;; Copyright © 2023 Mehmet Tekman <mtekman89@gmail.com>
 ;;; Copyright © 2025 Sharlatan Hellseher <sharlatanus@gmail.com>
 ;;; Copyright © 2025 Nigko Yerden <nigko.yerden@gmail.com>
+;;; Copyright © 2025 Skylar Hill <stellarskylark@posteo.net>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -41,6 +42,7 @@
   #:use-module (gnu packages bash)
   #:use-module (gnu packages bison)
   #:use-module (gnu packages boost)
+  #:use-module (gnu packages build-tools)
   #:use-module (gnu packages check)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
@@ -81,7 +83,7 @@
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system cmake)
   #:use-module (guix build-system pyproject)
-  #:use-module (guix build-system python)
+  #:use-module ((guix build-system python) #:select (pypi-uri))
   #:use-module (guix build-system r)
   #:use-module (guix download)
   #:use-module (guix gexp)
@@ -217,21 +219,20 @@ the real span of the lattice.")
 (define-public python-fpylll
   (package
     (name "python-fpylll")
-    (version "0.6.3")
+    (version "0.6.4")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "fpylll" version))
        (sha256
         (base32
-         "12i4sj6p0z94r1p568jprcnklpi6qh926whzywv23d973jg09x53"))))
+         "1k9fcfcf0p0z0szd1f5973mg9ixl51vmhifc684l2sm4mpc607bi"))))
     (build-system pyproject-build-system)
-    (native-inputs (list python-setuptools python-wheel))
+    (native-inputs (list python-pytest python-setuptools python-wheel))
     (inputs
      (list fplll gmp mpfr pari-gp))
     (propagated-inputs
-     (list python-cysignals python-cython-3 python-flake8 python-numpy
-           python-pytest))
+     (list python-cysignals python-cython-3 python-flake8 python-numpy))
     (home-page "https://github.com/fplll/fpylll")
     (synopsis "Python interface for fplll")
     (description "fpylll is a Python wrapper for fplll.")
@@ -337,7 +338,7 @@ GP2C, the GP to C compiler, translates GP scripts to PARI programs.")
 (define-public paritwine
   (package
     (name "paritwine")
-    (version "0.2.1")
+    (version "0.2.2")
     (source (origin
               (method url-fetch)
               (uri (string-append
@@ -346,7 +347,7 @@ GP2C, the GP to C compiler, translates GP scripts to PARI programs.")
                     ".tar.gz"))
               (sha256
                (base32
-                "0xj948ngp9k2l1krwfcpzb4rxrvm2gy3r8w020lniz5hwbslagl7"))))
+                "0hkn18qkg4ssg1rg6k95ff7yvywacvhwqq9gj06wix4xb7nw4yzz"))))
     (build-system gnu-build-system)
     (propagated-inputs (list pari-gp
                              gmp
@@ -485,13 +486,14 @@ or text interfaces) or as a C++ library.")
 (define-public flint
   (package
    (name "flint")
-   (version "3.1.2")
+   (version "3.2.1")
    (source
     (origin
       (method url-fetch)
-      (uri (string-append "https://flintlib.org/flint-" version ".tar.gz"))
+      (uri (string-append "https://flintlib.org/download/flint-"
+                          version ".tar.gz"))
       (sha256
-       (base32 "0017bjncpx4kdx67qcnm3nahz3gyyi2w3ggkrx586r3llcqs9czx"))))
+       (base32 "0gyjbkhwrmx2vgb1gailnmmzacl4aikzgi70dzmpf8lpfxny8yya"))))
    (build-system gnu-build-system)
    (inputs
     (list ntl))
@@ -526,32 +528,39 @@ fast arithmetic.")
 (define-public python-flint
   (package
     (name "python-flint")
-    (version "0.5.0")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://github.com/fredrik-johansson/python-flint")
-                    (commit version)))
-              (file-name (git-file-name name version))
-              (sha256
-               (base32
-                "10370kqik6q6vdqrqv3gbznsyaxbgqb3rbrff4alpw0sqr5s07c7"))))
-    (build-system python-build-system)
+    (version "0.7.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/fredrik-johansson/python-flint")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "09nsys2cajxsfh2c13nf98a2kwnm0msmab9f9zcjpkndj4ir453a"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:test-flags #~(list "--pyargs" "flint")))
     (native-inputs
-     (list python-cython-3))
+     (list meson-python
+           pkg-config
+           python-cython-3
+           python-pytest))
+    (inputs
+     (list gmp
+           flint))
     (propagated-inputs
      (list python-numpy))
-    (inputs
-     (list flint))
+    (home-page "https://fredrikj.net/python-flint/")
     (synopsis "Python module wrapping ARB and FLINT")
     (description
      "Python-flint is a Python extension module wrapping FLINT
 (Fast Library for Number Theory) and Arb (arbitrary-precision ball
-arithmetic).  It supports integers, rationals, modular integers,
-real and complex ball arithmetic, polynomials and matrices over all
-these types and other mathematical functions.")
-    (license license:expat)
-    (home-page "https://fredrikj.net/python-flint/")))
+arithmetic).  It supports integers, rationals, modular integers, real and
+complex ball arithmetic, polynomials and matrices over all these types and
+other mathematical functions.")
+    (license license:expat)))
 
 (define-public ntl
   (package
@@ -602,7 +611,7 @@ matrices, and polynomials over the integers and over finite fields.")
 (define-public singular
   (package
    (name "singular")
-   (version "4.4.0p7")
+   (version "4.4.1")
    (source
     (origin
       (method url-fetch)
@@ -618,7 +627,7 @@ matrices, and polynomials over the integers and over finite fields.")
                       "/singular-" version ".tar.gz"))
             (sha256
               (base32
-               "0625541pxxhs7789i3ddf5fm1pqvf1kyljyaii41djg9j12cdhbc"))))
+               "16xlhar1krlskh9gxbw1gw4qi8248c95w71vzxdw72avs2pblkva"))))
    (build-system gnu-build-system)
    (arguments
     (list
@@ -632,7 +641,6 @@ matrices, and polynomials over the integers and over finite fields.")
           flint
           mpfr
           ntl
-          python-2
           readline))
    (synopsis "Computer algebra system for polynomial computations")
    (description
@@ -643,7 +651,7 @@ geometry and singularity theory.")
    ;; libraries with which it links are licensed under lgpl3+, so the
    ;; combined work becomes gpl3. See COPYING in the source code.
    (license license:gpl3)
-   (home-page "https://www.singular.uni-kl.de/index.php")))
+   (home-page "https://www.singular.uni-kl.de/index.html")))
 
 (define-public python-pysingular
   (package
@@ -1446,7 +1454,7 @@ objects.")
 (define-public spectra
   (package
     (name "spectra")
-    (version "1.0.1")
+    (version "1.1.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1455,18 +1463,10 @@ objects.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1krgx7763g0phrp879rgq10dvfyxrdx9rzwxiyzn6qi3iqr6d8hx"))))
+                "0n080n8ap3b6y7nz0xrlq3x7i4nsf4pl65l5z1r828kkx88agpms"))))
     (build-system cmake-build-system)
     (arguments
-     (list #:configure-flags #~(list "-DBUILD_TESTS=ON")
-           #:phases
-           #~(modify-phases %standard-phases
-               (replace 'check
-                 (lambda* (#:key tests? #:allow-other-keys)
-                   (when tests?
-                     ;; This test failed.
-                     (invoke "ctest" "--exclude-regex"
-                             "GenEigsRealShift")))))))
+     (list #:configure-flags #~(list "-DBUILD_TESTS=ON")))
     (inputs (list eigen))
     (home-page "https://spectralib.org/")
     (synopsis "C++ library for large scale eigenvalue problems")
@@ -1475,6 +1475,7 @@ a Redesigned ARPACK.  It is a C++ library for large scale eigenvalue problems,
 built on top of Eigen.  It is implemented as a header-only C++ library and can
 be easily embedded in C++ projects that require calculating eigenvalues of
 large matrices.")
+    (properties `((lint-hidden-cpe-vendors . ("brainstormforce" "wpspectra"))))
     (license license:mpl2.0)))
 
 (define-public gappa
@@ -1522,7 +1523,7 @@ for the Coq proof assistant.")
 (define-public givaro
   (package
     (name "givaro")
-    (version "4.1.1")
+    (version "4.2.1")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1531,7 +1532,7 @@ for the Coq proof assistant.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "11wz57q6ijsvfs5r82masxgr319as92syi78lnl9lgdblpc6xigk"))))
+                "1nmfn9g859c9lwyifqbr0mi3xfhpx970janvm4smjvd9mac1cadx"))))
     (build-system gnu-build-system)
     (native-inputs
      (list autoconf automake libtool))
@@ -1551,16 +1552,16 @@ compound objects, such as vectors, matrices and univariate polynomials.")
 (define-public fflas-ffpack
   (package
     (name "fflas-ffpack")
-    (version "2.4.3")
+    (version "2.5.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
                     (url "https://github.com/linbox-team/fflas-ffpack")
-                    (commit version)))
+                    (commit (string-append "v" version))))
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1ynbjd72qrwp0b4kpn0p5d7gddpvj8dlb5fwdxajr5pvkvi3if74"))))
+                "1iv8jpiv5k3gcmvnry1jyaw06y8li0gi464ri5a1aa9j6pd5qfqk"))))
     (build-system gnu-build-system)
     (native-inputs
      (list autoconf automake libtool pkg-config))
@@ -1590,7 +1591,7 @@ algebra, such as the row echelon form.")
 (define-public linbox
   (package
     (name "linbox")
-    (version "1.6.3")
+    (version "1.7.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1599,8 +1600,7 @@ algebra, such as the row echelon form.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "10j6dspbsq7d2l4q3y0c1l1xwmaqqba2fxg59q5bhgk9h5d7q571"))
-              (patches (search-patches "linbox-fix-pkgconfig.patch"))))
+                "0kr95ah0ss5s4j8kwxqlg395wraf32rdrmy83jfblg0avxmkhvwr"))))
     (build-system gnu-build-system)
     (native-inputs
      (list autoconf automake libtool pkg-config))
@@ -1617,16 +1617,16 @@ finite fields.")
 (define-public m4ri
   (package
     (name "m4ri")
-    (version "20200125")
+    (version "20250128")
     (source (origin
               (method git-fetch)
               (uri (git-reference
                     (url "https://bitbucket.org/malb/m4ri")
-                    (commit (string-append "release-" version))))
+                    (commit version)))
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1dxgbv6zdyki3h61qlv7003wzhy6x14zmcaz9x19md1i7ng07w1k"))))
+                "1nrxylpwjv0b8nqjb93x83il8v6c13l3cwhjp5qxxjsbhwir7032"))))
     (build-system gnu-build-system)
     (native-inputs
      (list autoconf automake libtool pkg-config))
@@ -1646,79 +1646,42 @@ multiplication algorithm.")
 (define-public symmetrica
   (package
     (name "symmetrica")
-    (version "2.0")
+    (version "3.1.0")
     (source (origin
-              (method url-fetch/tarbomb)
-              (uri (let ((v (string-join (string-split version #\.) "_")))
-                     (string-append "http://www.algorithm.uni-bayreuth.de/"
-                                    "en/research/SYMMETRICA/"
-                                    "SYM" v "_tar.gz")))
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://gitlab.com/sagemath/symmetrica/")
+                    (commit version)))
+              (file-name (git-file-name name version))
               (sha256
                (base32
-                "1qhfrbd5ybb0sinl9pad64rscr08qvlfzrzmi4p4hk61xn6phlmz"))
-              ;; Taken from <https://git.sagemath.org/sage.git/plain/build/pkgs/symmetrica/patches/>
-              (patches (search-patches "symmetrica-bruch.patch"
-                                       "symmetrica-int32.patch"
-                                       "symmetrica-return_values.patch"
-                                       "symmetrica-sort_sum_rename.patch"))))
+                "0yirh2rhvih515442pr7nfx1wdwjhjvnnr0a51a02wc3z50qsxms"))))
     (build-system gnu-build-system)
-    (arguments
-     `(#:tests? #f                      ;no test
-       #:phases
-       (modify-phases %standard-phases
-         (add-after 'unpack 'fix-makefile
-           (lambda _
-             (substitute* "makefile"
-               (("cc -c") "gcc -c -fPIC"))
-             #t))
-         (add-after 'fix-makefile 'turn-off-banner
-           (lambda _
-             (substitute* "de.c"
-               (("(INT no_banner = )FALSE" _ pre) (string-append pre "TRUE")))
-             #t))
-         (delete 'configure)            ;no configure script
-         (replace 'install              ;no install target
-           (lambda* (#:key outputs #:allow-other-keys)
-             (let* ((out (assoc-ref outputs "out"))
-                    (lib (string-append out "/lib"))
-                    (inc (string-append out "/include/symmetrica"))
-                    (doc (string-append out "/share/doc/symmetrica-" ,version))
-                    (static "libsymmetrica.a"))
-               ;; Build static library.
-               (apply invoke "ar" "crs" static (find-files "." "\\.o$"))
-               (invoke "ranlib" static)
-               ;; Install static library and headers.
-               (for-each (lambda (f) (install-file f inc))
-                         (find-files "." "\\.h$"))
-               (install-file "libsymmetrica.a" lib)
-               ;; Install documentation.
-               (for-each (lambda (f) (install-file f doc))
-                         (find-files "." "\\.doc$"))
-               #t))))))
-    (home-page "http://www.algorithm.uni-bayreuth.de/en/research/SYMMETRICA/")
+    (native-inputs (list autoconf automake libtool pkg-config))
+    (home-page "https://gitlab.com/sagemath/symmetrica/")
     (synopsis "Combinatoric C Library")
     (description "Symmetrica is a library for combinatorics.  It has support
 for the representation theory of the symmetric group and related groups,
 combinatorics of tableaux, symmetric functions and polynomials, Schubert
 polynomials, and the representation theory of Hecke algebras of type A_n.")
-    (license license:public-domain)))
+    (license license:isc)))
 
 (define-public m4rie
   (package
     (name "m4rie")
-    (version "20150908")
+    (version "20250128")
     (source (origin
               (method git-fetch)
               (uri (git-reference
                     (url "https://bitbucket.org/malb/m4rie")
-                    (commit (string-append "release-" version))))
+                    (commit version)))
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0r8lv46qx5mkz5kp3ay2jnsp0mbhlqr5z2z220wdk73wdshcznss"))))
+                "1la0x8r7ymn9b36rrsjphr6j8abmnpirwxmi81qbyzjar1grj3mp"))))
     (build-system gnu-build-system)
     (native-inputs
-     (list autoconf automake libtool))
+     (list autoconf automake libtool pkg-config))
     (inputs
      (list m4ri))
     (synopsis "Arithmetic of dense matrices over F_{2^e}")
@@ -2147,7 +2110,7 @@ gnuplot program, if installed, to draw figures.")
 (define-public msolve
   (package
     (name "msolve")
-    (version "0.7.3")
+    (version "0.8.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -2156,7 +2119,7 @@ gnuplot program, if installed, to draw figures.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1ipsdw5sk4d344ki4r5ma9vn8gyi8hrk0n951r0720wvgxkw920p"))))
+                "0jncyyaxq6s4vwjhcha04rmbiv6vxsamkn4g5ln2rr202af92jnj"))))
     (build-system gnu-build-system)
     (native-inputs (list autoconf automake libtool))
     (inputs (list flint gmp mpfr))
@@ -2177,3 +2140,37 @@ systems.  This encompasses:
 @end itemize")
     (license license:gpl2+)))
 
+(define-public clac
+  (package
+    (name "clac")
+    (version "0.3.4")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/soveran/clac")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        "0crpm5rxxipiz6kqs5ip900d77vvnslyjn5f6nj0lrc86bkbgi8d")))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:test-target "test"
+      #:phases
+      #~(modify-phases %standard-phases
+          (delete 'configure)
+          (add-before 'build 'set-env
+            (lambda _
+              (setenv "CC" "gcc")
+              (setenv "PREFIX" #$output))))))
+    (home-page "https://github.com/soveran/clac")
+    (synopsis "Command-line, stack-based calculator with postfix notation")
+    (description
+     "Clac is a command line, stack-based calculator with postfix notation
+that displays the stack contents at all times.  As you type, the stack
+changes are reflected immediately.")
+    ;; Bundles two dependencies, both also BSD-2. SDS is not yet packaged.
+    ;; linenoise is packaged, but the package doesn't provide shared
+    ;; object files so we have to build it anyway.
+    (license license:bsd-2)))

@@ -40,6 +40,7 @@
 ;;; Copyright © 2024 Dariqq <dariqq@posteo.net>
 ;;; Copyright © 2024 Wilko Meyer <w@wmeyer.eu>
 ;;; Copyright © 2024 dan <i@dan.games>
+;;; Copyright © 2024 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -665,6 +666,33 @@ for translations, though this is only a dependency for the maintainers.  This
 database is translated at Transifex.")
     (license license:gpl2+)))
 
+(define-public xdgcpp
+  ;; XXX: Does not release anymore.
+  (let ((commit "e2c40c081e2ee2d315d1d0b3ae5981d5fd77260e")
+        (revision "0"))
+    (package
+      (name "xdgcpp")
+      (version (git-version "0.1.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/Grumbel/xdgcpp")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0wxxck7phbgqdlg3g1ryw0vhkx17xi1ivqsbh32r0liw9i2xis3s"))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        #:tests? #f)) ;no test suite
+      (home-page "https://github.com/Grumbel/xdgcpp")
+      (synopsis "C++ implementation of the XDG base dir specification")
+      (description
+       "This package provides a straightforward implementation of the XDG Base
+Directory Specification.")
+      (license license:lgpl3+))))
+
 (define-public xdg-utils
   (package
     (name "xdg-utils")
@@ -1169,6 +1197,8 @@ This library provides just sd-bus (and the busctl utility).")
                          "nss-systemd")))
        (list
         #:configure-flags #~(list
+                             ;; Relax gcc-14's strictness.
+                             "-Dc_args=-g -O2 -Wno-format-overflow"
                              #$@(map (lambda (component)
                                        (string-append "-D" component "=false"))
                                      (delete "localed" components)))
@@ -1301,7 +1331,7 @@ manager for the current system.")
 (define-public power-profiles-daemon
   (package
     (name "power-profiles-daemon")
-    (version "0.23")
+    (version "0.30")
     (source
      (origin
        (method git-fetch)
@@ -1311,7 +1341,7 @@ manager for the current system.")
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "08xz38r2fv6bpmv5vyjfvizwkbflg6m504fh3qd1jpw6xxv1lzwi"))))
+         "0bp14d1bazylcpqmi26z3kq2gc33rk7w8092lzy5j4l1iq1j21c9"))))
     (build-system meson-build-system)
     (outputs '("out" "doc"))
     (arguments
@@ -1330,12 +1360,16 @@ manager for the current system.")
                  (lambda _
                    (wrap-program
                        (string-append #$output "/bin/powerprofilesctl")
-                     `("GUIX_PYTHONPATH" = (,(string-append
-                                              #$(this-package-input "python-pygobject")
-                                              "/lib/python"
-                                              #$(version-major+minor
-                                                 (package-version (this-package-input "python")))
-                                              "/site-packages"))))))
+                     `("GUIX_PYTHONPATH" prefix
+                       (,(string-append
+                          #$(this-package-input "python-pygobject")
+                          "/lib/python" #$(version-major+minor
+                                           (package-version
+                                            (this-package-input "python")))
+                          "/site-packages")))
+                     `("GI_TYPELIB_PATH" prefix (,(string-append
+                                                   #$(this-package-input "glib")
+                                                   "/lib/girepository-1.0"))))))
                (add-after 'install 'move-docs
                  (lambda _
                    (mkdir-p (string-append #$output:doc "/share"))
@@ -1561,7 +1595,7 @@ fullscreen) or other display servers.")
 (define-public wayland-protocols
   (package
     (name "wayland-protocols")
-    (version "1.39")
+    (version "1.44")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1570,7 +1604,7 @@ fullscreen) or other display servers.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1dpcwsd2p6sjf5164b674cr7vq24hp3lfdshijj438r4bx8bld28"))))
+                "1gjhfiah8hkhqlfan2pr8jvf9h8rjkyz79kkxddi8js2q7dy4bbq"))))
     (build-system meson-build-system)
     (inputs
      (list wayland))
@@ -1587,11 +1621,11 @@ protocol either in Wayland core, or some other protocol in wayland-protocols.")
     (home-page "https://wayland.freedesktop.org")
     (license license:expat)))
 
-(define-public wayland-protocols-next
+(define-public wayland-protocols-1.42
   (package
     (inherit wayland-protocols)
-    (name "wayland-protocols-next")
-    (version "1.43")
+    (name "wayland-protocols-1.42")
+    (version "1.42")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1600,7 +1634,7 @@ protocol either in Wayland core, or some other protocol in wayland-protocols.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1pgjkc0gw11xb55kn8hf8adnmx3bkpgb4p0haylb2jh7irqhxhqd"))))))
+                "1gx8788wgkl42x3fh4kwkfz2xy7n84slbjwqg9w5z2b7jjkwzrrq"))))))
 
 (define-public wayland-utils
   (package
@@ -3235,7 +3269,7 @@ compatible with the well-known scripts of the same name.")
 (define-public libportal
   (package
     (name "libportal")
-    (version "0.7.1")
+    (version "0.9.1")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -3244,7 +3278,7 @@ compatible with the well-known scripts of the same name.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0ypl9ds5g5jzyirjg4ic0r7lzv39w67yrh8njz1cw566g4j1kfny"))))
+                "1rbqkmvvfig98ig8gsf93waiizrminj7gywxbza15hzx3an3hwh9"))))
     (build-system meson-build-system)
     (arguments
      (list
@@ -3457,14 +3491,14 @@ interfaces.")
 (define-public xdg-desktop-portal-kde
   (package
     (name "xdg-desktop-portal-kde")
-    (version "6.1.4")
+    (version "6.2.5")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://kde/stable/plasma/" version "/"
                                   name "-" version ".tar.xz"))
               (sha256
                (base32
-                "1cm7vh179dvb4jrd70ifsgpkrnfk9imzb65cg76g5znmhvyibjiq"))))
+                "1w9sc8a4a3h3604x6vakhbiqibcwxiqpcd4kvq540cy4gmpvz1hy"))))
     (build-system qt-build-system)
     (arguments (list
                 #:tests? #f ;; colorschemetest test fail, because require dbus.
@@ -3476,6 +3510,7 @@ interfaces.")
     (inputs (list cups
                   kcoreaddons
                   kconfig
+                  kcrash
                   ki18n
                   kdeclarative
                   kio

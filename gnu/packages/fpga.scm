@@ -55,6 +55,7 @@
   #:use-module (gnu packages cmake)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
+  #:use-module (gnu packages electronics)
   #:use-module (gnu packages elf)
   #:use-module (gnu packages flex)
   #:use-module (gnu packages freedesktop)
@@ -86,7 +87,8 @@
   #:use-module (gnu packages tcl)
   #:use-module (gnu packages texinfo)
   #:use-module (gnu packages toolkits)
-  #:use-module (gnu packages version-control))
+  #:use-module (gnu packages version-control)
+  #:use-module (gnu packages web))
 
 (define-public abc
   (let ((commit "d2714035145bd237097c509c23fc9e24b0fa933b")
@@ -127,7 +129,7 @@ formal verification.")
   (package
     (inherit abc)
     (name "abc-yosyshq")
-    (version "0.53")
+    (version "0.55")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -185,7 +187,7 @@ For synthesis, the compiler generates netlists in the desired format.")
 (define-public yosys
   (package
     (name "yosys")
-    (version "0.53")
+    (version "0.55")
     (source
      (origin
        (method git-fetch)
@@ -193,7 +195,7 @@ For synthesis, the compiler generates netlists in the desired format.")
              (url "https://github.com/YosysHQ/yosys")
              (commit (string-append "v" version))))
        (sha256
-        (base32 "01pcf20dpm0gjfzr9bvw4w7cgc390gqg3xfnir9d6x0nr8k6lljh"))
+        (base32 "1c5zvbk0jpz564l1jw7pxba93iq967ci0qpam7ahq0mhi14jinl8"))
        (file-name (git-file-name name version))))
     (build-system gnu-build-system)
     (arguments
@@ -437,18 +439,39 @@ files.")
      (list
       #:cmake cmake                     ;CMake 3.25 or higher is required.
       #:configure-flags
-      #~(list "-DARCH=generic;ice40"    ;TODO: enable more architectures?
+      ;; TODO: enable more architectures?
+      #~(list "-DARCH=generic;ice40;ecp5;himbaechel"
               "-DBUILD_GUI=ON"
               "-DUSE_OPENMP=ON"
               "-DBUILD_TESTS=ON"
+              "-DHIMBAECHEL_UARCH=ng-ultra"
+              "-DHIMBAECHEL_NGULTRA_DEVICES=ng-ultra"
+              "-DHIMBAECHEL_PRJBEYOND_DB=/tmp/prjbeyond-db"
               (string-append "-DCURRENT_GIT_VERSION=nextpnr-" #$version)
               (string-append "-DICESTORM_INSTALL_PREFIX="
                              #$(this-package-input "icestorm"))
+              (string-append "-DTRELLIS_INSTALL_PREFIX="
+                             #$(this-package-input "prjtrellis"))
               "-DUSE_IPO=OFF")
       #:phases
       #~(modify-phases %standard-phases
+          ;; Required by himbaechel architecture, ng-ultra support.
+          (add-after 'unpack 'get-prjbeyond-db
+            (lambda _
+              (copy-recursively
+               #$(origin
+                   (method git-fetch)
+                   (uri (git-reference
+                         (url "https://github.com/yosyshq-GmbH/prjbeyond-db/")
+                         ;; We take latest commit, as indicated in nextpnr’s
+                         ;; README.md file
+                         (commit "06d3b424dd0e52d678087c891c022544238fb9e3")))
+                   (sha256
+                    (base32
+                     "17dd3cgms2fy6xvz7magdmvv92km4cqh2kz9dyjrvz5y8caqav4y")))
+               "/tmp/prjbeyond-db")))
           (add-after 'unpack 'unbundle-sanitizers-cmake
-            (lambda* (#:key inputs #:allow-other-keys)
+            (lambda _
               (substitute* "CMakeLists.txt"
                 ;; Use the system sanitizers-cmake module.  This is made
                 ;; necessary 'sanitizers-cmake' installing a FindPackage
@@ -465,6 +488,7 @@ files.")
            corrosion
            eigen
            icestorm
+           prjtrellis
            pybind11
            python
            qtbase-5
@@ -572,7 +596,7 @@ a hardware description and verification language.")
 (define-public python-vunit
   (package
     (name "python-vunit")
-    (version "5.0.0-dev.5") ;v4.7.0 dates back from 2 years ago.
+    (version "5.0.0-dev.6") ;v4.7.0 dates back from 2 years ago.
     (source
      (origin
        (method git-fetch)
@@ -582,10 +606,21 @@ a hardware description and verification language.")
              (recursive? #t)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1sfnl1l6bgaqa8c2sk8k8f232bnq2drjg6rg7jvscmyz18yfih0b"))))
+        (base32 "0zm7733g7ivcx6y00bigvqzkxa2i46sw4pb5k1n3lfbqvsjymshh"))))
     (build-system pyproject-build-system)
     (arguments
      (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'fix-ghdl-jit
+            (lambda _
+              ;; TODO: Remove when fixed upstream (see:
+              ;; https://github.com/VUnit/vunit/pull/1121).
+              (substitute* "vunit/sim_if/ghdl.py"
+                ((": \"llvm\",")
+                 (string-append
+                  ": \"llvm\",\n\tr\"static elaboration, LLVM JIT code "
+                  "generator\": \"llvm-jit\","))))))
       #:test-flags
       ;; Skip lint tests which require python-pycodestyle, python-pylint and
       ;; python-mypy to reduce closoure size; some lint test fails, see
@@ -615,7 +650,7 @@ automated testing of HDL code.")
 (define-public nvc
   (package
     (name "nvc")
-    (version "1.16.0")
+    (version "1.16.2")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -624,11 +659,20 @@ automated testing of HDL code.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1hi1mqhjbj7r3wcdkjr6yazwpc7y9lqc0b8bj4ikfgdfsmakm3s4"))))
+                "0kzlr99viw652p8wiz0nb1705hyh4mkx7j9zk1yzrspqfmh6pcq3"))))
     (build-system gnu-build-system)
     (arguments
      (list #:out-of-source? #t
-           #:configure-flags #~(list "--enable-tcl" "--enable-llvm")
+           #:configure-flags
+           #~(list "--enable-tcl"
+                   "--enable-llvm"
+                   "--enable-verilog"
+                   "--enable-vital"
+                   "--enable-server"
+                   "--with-ncurses"
+                   "--enable-parallel-make"
+                   (string-append "--with-bash-completion=" #$output
+                                  "/share/bash-completion/completions"))
            #:phases #~(modify-phases %standard-phases
                         (add-after 'unpack 'clean-up
                           (lambda _
@@ -645,7 +689,8 @@ automated testing of HDL code.")
            ruby
            which))
     (inputs
-     (list libffi
+     (list jansson
+           libffi
            llvm
            readline
            tcl
@@ -795,16 +840,32 @@ hardware designs in Verilog.")
                   libusb
                   zlib))
     (arguments
-     `(#:tests? #f)) ; No tests exist
+     (list #:tests? #f                  ;no test suite
+           #:phases
+           #~(modify-phases %standard-phases
+               (add-after 'install 'install-rules
+                 (lambda _
+                   (install-file
+                    "../source/99-openfpgaloader.rules"
+                    (string-append #$output "/lib/udev/rules.d/")))))))
     (synopsis "Utility for programming FPGA")
     (description "This package provides a program to transfer a bitstream
-to an FPGA.")
-    (home-page "https://trabucayre.github.io/openFPGALoader")
+to an FPGA.  To use @code{openfpgaloader} without root privileges it is
+necessary to install the necessary udev rules.  This can be done by extending
+@code{udev-service-type} in the @code{operating-system} configuration file with
+this package, as in:
+@lisp
+(udev-rules-service 'openfpgaloader openfpgaloader #:groups '(\"plugdev\")
+@end lisp
+Additionally, the @samp{plugdev} group should be registered in the
+@code{supplementary-groups} field of your @code{user-account} declaration. Refer
+to @samp{info \"(guix) Base Services\"} for examples.")
+    (home-page "https://trabucayre.github.io/openFPGALoader/")
     (license license:asl2.0)))
 
 (define-public python-hdlmake
-  (let ((commit "9338e3e7a8784e63d16496a3fa8234d9e5aa7621")
-        (revision "1"))
+  (let ((commit "48260fb0d7ace3ff2ee124121a5780a226513077")
+        (revision "2"))
     (package
       (name "python-hdlmake")
       (version (git-version "3.3" revision commit))
@@ -816,14 +877,15 @@ to an FPGA.")
                (commit commit)))
          (file-name (git-file-name name version))
          (sha256
-          (base32 "13d0zvpch0k758r2c2vq3vhd9nbydy01jnv2ddfvb6d3xpb4wzrj"))))
+          (base32 "1s36gc5g3v20x2v26d45hfw2x9r7k54lj7sggz94qi7ydbi1ng41"))))
       (build-system pyproject-build-system)
       (arguments (list #:phases #~(modify-phases %standard-phases
                                     (add-before 'check 'chdir
                                       (lambda _
-                                        (chdir "testsuite"))))))
+                                        (chdir "testsuite"))))
+                       #:test-flags #~(list "test_all.py")))
       (native-inputs (list python-pytest python-setuptools python-wheel))
-      (propagated-inputs (list python-six))
+      (propagated-inputs (list python-networkx python-six))
       (home-page "https://gitlab.com/ohwr/project/hdl-make/")
       (synopsis "Generate multi-purpose makefiles for HDL projects")
       (description

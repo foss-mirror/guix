@@ -24,6 +24,7 @@
 ;;; Copyright © 2024 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2025 Ricardo Wurmus <rekado@elephly.net>
 ;;; Copyright © 2025 Andrew Wong <wongandj@icloud.comg>
+;;; Copyright © 2025 Anderson Torres <anderson.torres.8519@gmail.com>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -79,6 +80,7 @@
   #:use-module (gnu packages freedesktop)
   #:use-module (gnu packages fribidi)
   #:use-module (gnu packages game-development)
+  #:use-module (gnu packages gcc)
   #:use-module (gnu packages gettext)
   #:use-module (gnu packages gl)
   #:use-module (gnu packages glib)
@@ -86,6 +88,7 @@
   #:use-module (gnu packages graphics)
   #:use-module (gnu packages gtk)
   #:use-module (gnu packages image)
+  #:use-module (gnu packages kde-frameworks)
   #:use-module (gnu packages libedit)
   #:use-module (gnu packages libusb)
   #:use-module (gnu packages linux)
@@ -273,6 +276,42 @@ console.")
     (description
      "DeSmuME is an emulator for the Nintendo DS handheld gaming console.")
     (license license:gpl2)))
+
+(define-public melonds
+  (package
+   (name "melonds")
+   (version "1.0rc")
+   (source (origin
+            (method git-fetch)
+            (uri (git-reference
+                  (url "https://github.com/melonDS-emu/melonDS")
+                  (commit version)))
+            (file-name (git-file-name name version))
+            (sha256
+             (base32
+              "1y8ilin758znizmxyq23plx1wnx2pc9zqd2qrvr1cgy0s2wzxr7z"))))
+   (build-system cmake-build-system)
+   (arguments ; no test suite
+    '(#:tests? #f))
+   (native-inputs
+    (list gcc-13
+          extra-cmake-modules
+          pkg-config))
+   (inputs
+    (list enet
+          libarchive
+          sdl2
+          qtbase
+          qtmultimedia
+          qtsvg
+          wayland
+          (list zstd "lib")))
+   (home-page "https://melonds.kuribo64.net")
+   (synopsis "Nintendo DS emulator")
+   (description
+    "melonDS is an emulator for the Nintendo DS handheld gaming console.
+It aims to support Nintendo DSi and 3DS as well.")
+   (license license:gpl3+)))
 
 ;; Building from recent Git because the official 5.0 release no longer builds.
 ;; Following commits and revision numbers of beta versions listed at
@@ -987,6 +1026,46 @@ and Super Game Boy emulator.  SameBoy is accurate and includes a wide
 range of debugging features.  It has all the features one would expect
 from an emulator---from save states to scaling filters.")
     (license license:expat)))
+
+(define-public stella
+  (package
+    (name "stella")
+    (version "7.0c")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/stella-emu/stella")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0kcbjlsi5wy0pia7apck7va86yx9y6iyy5245ylkn77khaf7wr13"))
+       (modules '((guix build utils)))
+       (snippet
+        '(begin
+           ;; Delete machine-generated parser files
+           (with-directory-excursion "src/debugger/yacc"
+             (delete-file "y.tab.c")
+             (delete-file "y.tab.h"))))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:tests? #f ;no tests
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; Regenerate the deleted files
+          (add-before 'build 'regenerate-yacc-files
+            (lambda _
+              (with-directory-excursion "src/debugger/yacc"
+                (invoke "make" "-f" "Makefile.yacc")))))))
+    (inputs (list sdl2 sqlite))
+    (native-inputs (list bison pkg-config sdl2))
+    (synopsis "Atari 2600 @acronym{VCS, Video Computer System} emulator")
+    (description "Stella is a multi-platform Atari 2600
+@acronym{VCS, Video Computer System} emulator, released as Free Software.
+Enjoy all of your favorite Atari 2600 games on your PC thanks to Stella!")
+    (home-page "https://stella-emu.github.io/")
+    (license license:gpl2+)))
 
 (define-public mupen64plus-core
   (package
@@ -2878,34 +2957,34 @@ play them on systems for which they were never designed!")
   (package
     (name "libticables2")
     (version "1.3.5")
-    (source (origin
-              (method url-fetch)
-              (uri "https://www.ticalc.org/pub/unix/tilibs.tar.gz")
-              (sha256
-               (base32
-                "07cfwwlidgx4fx88whnlch6y1342x16h15lkvkkdlp2y26sn2yxg"))))
+    (source
+     (origin
+       (method url-fetch)
+       (uri "https://www.ticalc.org/pub/unix/tilibs.tar.gz")
+       (sha256
+        (base32 "07cfwwlidgx4fx88whnlch6y1342x16h15lkvkkdlp2y26sn2yxg"))))
     (build-system gnu-build-system)
     (arguments
-     `(#:configure-flags (list "--enable-libusb10")
-       #:phases
-       (modify-phases %standard-phases
-         (replace 'unpack
-           (lambda* (#:key source #:allow-other-keys)
-             (invoke "tar" "xvkf" source)
-             (invoke "tar" "xvkf"
-                     (string-append "tilibs2/libticables2-"
-                                    ,version ".tar.bz2"))
-             (chdir (string-append "libticables2-" ,version))
-             #t)))))
-    (native-inputs
-     (list autoconf
-           autogen
-           automake
-           gnu-gettext
-           libtool
-           pkg-config))
-    (inputs
-     (list glib libusb))
+     (list
+      #:configure-flags
+      #~(list "--enable-libusb10")
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'unpack
+            (lambda* (#:key source #:allow-other-keys)
+              (invoke "tar" "xvkf" source)
+              (invoke "tar" "xvkf"
+                      (string-append "tilibs2/libticables2-"
+                                     #$version ".tar.bz2"))
+              (chdir (string-append "libticables2-"
+                                    #$version)))))))
+    (native-inputs (list autoconf
+                         autogen
+                         automake
+                         gettext-minimal
+                         libtool
+                         pkg-config))
+    (inputs (list glib libusb))
     (synopsis "Link cable library for TI calculators")
     (description
      "This package contains libticables, a library for operations on
@@ -2956,28 +3035,27 @@ This is a part of the TiLP project.")
   (package
     (name "libtifiles2")
     (version "1.1.7")
-    (source (origin
-              (method url-fetch)
-              (uri "https://www.ticalc.org/pub/unix/tilibs.tar.gz")
-              (sha256
-               (base32
-                "07cfwwlidgx4fx88whnlch6y1342x16h15lkvkkdlp2y26sn2yxg"))))
+    (source
+     (origin
+       (method url-fetch)
+       (uri "https://www.ticalc.org/pub/unix/tilibs.tar.gz")
+       (sha256
+        (base32 "07cfwwlidgx4fx88whnlch6y1342x16h15lkvkkdlp2y26sn2yxg"))))
     (build-system gnu-build-system)
     (arguments
-     `(#:phases
-       (modify-phases %standard-phases
-         (replace 'unpack
-           (lambda* (#:key source #:allow-other-keys)
-             (invoke "tar" "xvkf" source)
-             (invoke "tar" "xvkf"
-                     (string-append "tilibs2/libtifiles2-"
-                                    ,version ".tar.bz2"))
-             (chdir (string-append "libtifiles2-" ,version))
-             #t)))))
-    (native-inputs
-     (list autoconf automake gnu-gettext libtool pkg-config))
-    (inputs
-     (list glib libarchive libticonv))
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'unpack
+            (lambda* (#:key source #:allow-other-keys)
+              (invoke "tar" "xvkf" source)
+              (invoke "tar" "xvkf"
+                      (string-append "tilibs2/libtifiles2-"
+                                     #$version ".tar.bz2"))
+              (chdir (string-append "libtifiles2-"
+                                    #$version)))))))
+    (native-inputs (list autoconf automake gettext-minimal libtool pkg-config))
+    (inputs (list glib libarchive libticonv))
     (synopsis "File functions library for TI calculators")
     (description
      "This package contains libticonv, a library to support working with
@@ -2991,28 +3069,27 @@ This is a part of the TiLP project.")
   (package
     (name "libticalcs2")
     (version "1.1.9")
-    (source (origin
-              (method url-fetch)
-              (uri "https://www.ticalc.org/pub/unix/tilibs.tar.gz")
-              (sha256
-               (base32
-                "07cfwwlidgx4fx88whnlch6y1342x16h15lkvkkdlp2y26sn2yxg"))))
+    (source
+     (origin
+       (method url-fetch)
+       (uri "https://www.ticalc.org/pub/unix/tilibs.tar.gz")
+       (sha256
+        (base32 "07cfwwlidgx4fx88whnlch6y1342x16h15lkvkkdlp2y26sn2yxg"))))
     (build-system gnu-build-system)
     (arguments
-     `(#:phases
-       (modify-phases %standard-phases
-         (replace 'unpack
-           (lambda* (#:key source #:allow-other-keys)
-             (invoke "tar" "xvkf" source)
-             (invoke "tar" "xvkf"
-                     (string-append "tilibs2/libticalcs2-"
-                                    ,version ".tar.bz2"))
-             (chdir (string-append "libticalcs2-" ,version))
-             #t)))))
-    (native-inputs
-     (list autoconf automake gnu-gettext libtool pkg-config))
-    (inputs
-     (list glib libarchive libticables2 libticonv libtifiles2))
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'unpack
+            (lambda* (#:key source #:allow-other-keys)
+              (invoke "tar" "xvkf" source)
+              (invoke "tar" "xvkf"
+                      (string-append "tilibs2/libticalcs2-"
+                                     #$version ".tar.bz2"))
+              (chdir (string-append "libticalcs2-"
+                                    #$version)))))))
+    (native-inputs (list autoconf automake gettext-minimal libtool pkg-config))
+    (inputs (list glib libarchive libticables2 libticonv libtifiles2))
     (synopsis "Support library for TI calculators")
     (description
      "This project aims to develop a multi-platform linking program for use
@@ -3861,6 +3938,18 @@ graphic filters.  Some of its features include:
      "Uniforn is a lightweight, multi-platform, multi-architecture CPU
 emulator framework based on QEMU.")
     (license license:gpl2+)))
+
+(define-public unicorn-2.0
+  (package
+    (inherit unicorn)
+    (name "unicorn")
+    (version "2.0.1.post1")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (pypi-uri name version))
+       (sha256
+        (base32 "0mlfs8qfi0clyncfkbxp6in0cpl747510i6bqymwid43xcirbikz"))))))
 
 (define-public ppsspp
   (package

@@ -31,6 +31,7 @@
 ;;; Copyright © 2023, 2024 Foundation Devices, Inc. <hello@foundation.xyz>
 ;;; Copyright © 2023 Arnaud DABY-SEESARAM <ds-ac@nanein.fr>
 ;;; Copyright © 2024 Sören Tempel <soeren@soeren-tempel.net>
+;;; Copyright © 2025 Jussi Timperi <jussi.timperi@iki.fi>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -657,6 +658,45 @@ modules, modifies some functions in order to get better performances or
 safety (tail-recursive) and also provides new modules which should be useful
 for day to day programming.")
     ;; With static-linking exception
+    (license license:lgpl2.1+)))
+
+(define-public ocaml-camlpdf
+  (package
+    (name "ocaml-camlpdf")
+    (version "2.8.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/johnwhitington/camlpdf")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1cbqgwh62cqnsbax4k4iv9gb63k1v545izmbffxj8gj1q6sm0k34"))))
+    (build-system ocaml-build-system)
+    (arguments
+     (list
+      #:tests? #f ;no tests
+      #:make-flags
+        #~(list (string-append "CC=" #$(cc-for-target)))
+      #:phases
+        #~(modify-phases %standard-phases
+            (delete 'configure)
+            (add-after 'unpack 'patch-makefile-shell
+              (lambda _
+                (patch-makefile-SHELL "OCamlMakefile")))
+            (add-after 'install 'install-doc
+              (lambda _
+                (let ((doc (string-append #$output "/share/doc/"
+                                          #$name "-" #$version)))
+                  (copy-recursively "doc/camlpdf/html"
+                                    (string-append doc "/html"))))))))
+    (home-page "https://github.com/johnwhitington/camlpdf")
+    (synopsis "OCaml library for PDF file manipulation")
+    (description
+     "CamlPDF is an OCaml library that provides functionality for reading,
+writing, and modifying PDF files.  It serves as the foundation for the
+@command{cpdf} command-line tool and various API bindings.")
     (license license:lgpl2.1+)))
 
 (define-public ocaml-cudf
@@ -1408,7 +1448,7 @@ Knuth’s LR(1) parser construction technique.")
 (define-public binsec
   (package
     (name "binsec")
-    (version "0.10.0")
+    (version "0.10.1")
     (source
      (origin
        (method git-fetch)
@@ -1417,8 +1457,19 @@ Knuth’s LR(1) parser construction technique.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1szfqb6rj19w2jdyaxdgy3plhgr7picijf7l4k5qq80kna2h0zm8"))))
+        (base32 "0mb7n20b1p2np9dchwwcv046ivsan0n2zssp4b8gi7bg5m2nq11m"))))
     (build-system dune-build-system)
+    (arguments
+      (list #:phases
+            #~(modify-phases %standard-phases
+                (add-after 'install 'wrap-programs
+                  (lambda _
+                    (let ((ocamlpath
+                            `(,(string-append #$output "/lib/ocaml/site-lib")
+                               ,@(search-path-as-string->list (getenv "OCAMLPATH")))))
+                      (wrap-program (string-append #$output "/bin/" "binsec")
+                                    `("OCAMLPATH" ":" prefix ,ocamlpath))))))))
+    (inputs (list bash-minimal))
     (native-inputs (list gmp ocaml-qcheck ocaml-ounit2))
     (propagated-inputs (list dune-site
                              ocaml-base
@@ -1858,7 +1909,7 @@ full_split, cut, rcut, etc..")
 (define-public dune-bootstrap
   (package
     (name "dune")
-    (version "3.11.0")
+    (version "3.19.1")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1867,7 +1918,7 @@ full_split, cut, rcut, etc..")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "12k8k2964s1z05mj71f9imwyvk0jyh5h6mpw4hpyr2d73iw53ink"))))
+                "01ys792jnld5yihhyirwkk4jlqm59bk0vrqjvvk5xjn8pp26vryq"))))
     (build-system ocaml-build-system)
     (arguments
      `(#:tests? #f; require odoc
@@ -1992,7 +2043,7 @@ config.h files for instance.  Among other things, dune-configurator allows one t
 (define-public ocaml-pp
   (package
     (name "ocaml-pp")
-    (version "1.2.0")
+    (version "2.0.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -2001,7 +2052,7 @@ config.h files for instance.  Among other things, dune-configurator allows one t
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0ylwb8lbjzj1prnal3c5p404dvh7bv4s19cvgrplnd7s46lvnj50"))))
+                "1gfd6hrb031qzb54v2zhlfxs54x0vnbaj6a8as07pvpwx7qznyss"))))
     (build-system dune-build-system)
     (propagated-inputs (list ocaml-odoc))
     (native-inputs (list ocaml-ppx-expect))
@@ -6152,6 +6203,8 @@ interfaces and the standard higher-level merlin protocol.")
        (modify-phases %standard-phases
          (replace 'check
            (lambda* (#:key tests? #:allow-other-keys)
+              ;; Tests require a writable cache directory
+              (setenv "HOME" "/tmp")
              (when tests?
                (invoke "dune" "runtest" "-p" "merlin,dot-merlin-reader")))))))
     (propagated-inputs (list ocaml-merlin-lib ocaml-yojson))
@@ -6179,6 +6232,8 @@ Atom.")
         (modify-phases %standard-phases
           (replace 'check
             (lambda* (#:key tests? #:allow-other-keys)
+              ;; Tests require a writable cache directory
+              (setenv "HOME" "/tmp")
               (when tests?
                 (invoke "dune" "runtest" "-p" "merlin,dot-merlin-reader")))))))
      (propagated-inputs (list ocaml-merlin-lib ocaml-yojson))

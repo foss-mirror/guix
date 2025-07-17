@@ -21,7 +21,7 @@
 ;;; Copyright © 2021 Paul A. Patience <paul@apatience.com>
 ;;; Copyright © 2021 Charles Jackson <charles.b.jackson@protonmail.com>
 ;;; Copyright © 2022 Joeke de Graaf <joeke@posteo.net>
-;;; Copyright © 2021, 2022 jgart <jgart@dismail.de>
+;;; Copyright © 2021, 2022, 2025 jgart <jgart@dismail.de>
 ;;; Copyright © 2022 ( <paren@disroot.org>
 ;;; Copyright © 2023 Zheng Junjie <873216071@qq.com>
 ;;; Copyright © 2023 Yovan Naumovski <yovan@gorski.stream>
@@ -462,6 +462,13 @@ interface.")
              (lambda* (#:key outputs #:allow-other-keys)
                (install-file "build/boehmprecise/lib/libclasp.so"
                   (string-append (assoc-ref outputs "out") "/lib")))))))
+    (native-search-paths
+     (list (search-path-specification
+            (variable "XDG_DATA_DIRS")
+            (files '("share")))
+           (search-path-specification
+            (variable "XDG_CONFIG_DIRS")
+            (files '("etc")))))
     (home-page "https://clasp-developers.github.io/")
     (synopsis "Common Lisp implementation based on LLVM and C++")
     (description "Clasp is a new Common Lisp implementation that seamlessly
@@ -531,8 +538,15 @@ Definition Facility.")
         (base32 "0k2dmgl0miz3767iks4p0mvp6xw0ysyxhjpklyh11j010rmh6hqb"))))
     (build-system gnu-build-system)
     (native-inputs
-     (list cl-asdf))
-    (inputs (list libffcall ncurses readline libsigsegv))
+     (list
+      cl-asdf
+      coreutils)) ;to use "cat" in a test
+    (inputs
+     (list
+      libffcall
+      ncurses
+      readline
+      libsigsegv))
     (arguments
      `(#:configure-flags '(,@(if (string-prefix? "armhf-linux"
                                                  (or (%current-system)
@@ -552,7 +566,7 @@ Definition Facility.")
                             "--with-module=rawsock")
        #:phases
        (modify-phases %standard-phases
-         (add-after 'unpack 'patch-sh-and-pwd
+         (add-after 'unpack 'patch-references
            (lambda _
              ;; The package is very messy with its references to "/bin/sh" and
              ;; some other absolute paths to traditional tools.  These appear in
@@ -567,6 +581,8 @@ Definition Facility.")
                (("/bin/sh") "sh"))
              (substitute* '("src/clisp-link.in")
                (("/bin/pwd") "pwd"))
+             (substitute* '("tests/streamslong.tst")
+               (("/bin/cat") "cat"))
              #t))
          (add-after 'unpack 'replace-asdf
            ;; Use system ASDF instead of bundled one.
@@ -909,7 +925,7 @@ interface to the Tk widget system.")
 (define-public janet
   (package
     (name "janet")
-    (version "1.37.1")
+    (version "1.38.0")
     (source
      (origin
        (method git-fetch)
@@ -918,7 +934,7 @@ interface to the Tk widget system.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "06ym80siwvlg3fmha01vsaqilcd7fjx8wq61zql906yjiljq22rb"))))
+        (base32 "1ym852ns8s1m4br33yzw4ak475j5y8svh7bpzd22mhbaqqbc3drw"))))
     (build-system gnu-build-system)
     (arguments
      (list #:make-flags
@@ -1686,7 +1702,7 @@ the HTML documentation of TXR.")
 (define-public txr
   (package
     (name "txr")
-    (version "299")
+    (version "300")
     (source
      (origin
        (method git-fetch)
@@ -1695,7 +1711,7 @@ the HTML documentation of TXR.")
              (commit (string-append "txr-" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0hlq79j3vyx5y3ffccjkbqx7mvwzbw9dcfy5jrayfzzqwnsyvr78"))))
+        (base32 "1cxdsk31wj8874nijwbcx7c3zsspsclr722jbaivisrm2wx5hbqn"))))
     (build-system gnu-build-system)
     (arguments
      (list #:configure-flags

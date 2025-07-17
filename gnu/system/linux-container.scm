@@ -40,6 +40,7 @@
   #:use-module (gnu services shepherd)
   #:use-module (gnu system)
   #:use-module (gnu system file-systems)
+  #:use-module (gnu packages linux)
   #:export (system-container
             containerized-operating-system
             container-script
@@ -78,12 +79,13 @@ from OS that are needed on the bare metal and not in a container."
 (define dummy-networking-service-type
   (shepherd-service-type
    'dummy-networking
-   (const (shepherd-service
-           (documentation "Provide loopback and networking without actually
+   (lambda (provision)
+     (shepherd-service
+      (documentation "Provide loopback and networking without actually
 doing anything.")
-           (provision '(loopback networking))
-           (start #~(const #t))))
-   #f
+      (provision provision)
+      (start #~(const #t))))
+   '(loopback networking)
    (description "Provide loopback and networking without actually doing
 anything.  This service is used by guest systems running in containers, where
 networking support is provided by the host.")))
@@ -135,7 +137,7 @@ containerized OS.  EXTRA-FILE-SYSTEMS is a list of file systems to add to OS."
                  dhcp-client-service-type
                  network-manager-service-type
                  connman-service-type)
-                (list))))
+                (list static-networking-service-type)))) ;loopback
 
   (define services-to-add
     ;; Many Guix services depend on a 'networking' shepherd
@@ -143,12 +145,15 @@ containerized OS.  EXTRA-FILE-SYSTEMS is a list of file systems to add to OS."
     ;; service when we are sure that networking is already set up
     ;; in the host and can be used.  That prevents double setup.
     (if shared-network?
-        (list (service dummy-networking-service-type))
-        '()))
+        (list (service dummy-networking-service-type
+                       '(loopback networking)))
+        (list (service dummy-networking-service-type
+                       '(loopback)))))
 
   (define os-with-base-essential-services
     (operating-system
       (inherit os)
+      (kernel %dummy-linux-kernel-for-container)
       (swap-devices '()) ; disable swap
       (services
        (append services-to-add

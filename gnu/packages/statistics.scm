@@ -96,7 +96,8 @@
   #:use-module (gnu packages python-science)
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages readline)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages shells)
   #:use-module (gnu packages sphinx)
   #:use-module (gnu packages ssh)
@@ -208,14 +209,14 @@ simulation not wholly unlike BUGS.  JAGS was written with three aims in mind:
 (define-public libxls
   (package
     (name "libxls")
-    (version "1.6.2")
+    (version "1.6.3")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://github.com/libxls/libxls/releases/download/"
                            "v" version "/libxls-" version ".tar.gz"))
        (sha256
-        (base32 "0wg3ymr43aa1j3scyl9x83b2xgg7wilzpil0dj91a8dzji6w7b2x"))))
+        (base32 "0b327zafbwnfxj75n722z6a6zw195rs5bjmm5wskl9dml1p87yxj"))))
     (build-system gnu-build-system)
     (home-page "https://github.com/libxls/libxls")
     (synopsis "Read binary (.xls) Excel spreadsheet files")
@@ -464,6 +465,46 @@ publication-quality data plots.  A large amount of 3rd-party packages are
 available, greatly increasing its breadth and scope.")
     (license license:gpl3+)))
 
+(define-public python-dynesty
+  (package
+    (name "python-dynesty")
+    (version "2.1.5")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (pypi-uri "dynesty" version))
+       (sha256
+        (base32 "04fkbixkfyqlr8zjky177bmqxqd19xcicqx3r1mhhy0z7942sx7x"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:test-flags
+      #~(list "--numprocesses" (number->string (parallel-job-count))
+              ;; To run a full tests suite takes a few hours on 16 threads,
+              ;; skip slow tests.
+              "-m" "not slow"
+              ;; Tests fail with error: (liwork>=max(1,10*n)||liwork==-1)
+              ;; failed for 10th keyword liwork: dsyevr:liwork=
+              "--deselect=tests/test_ellipsoid.py::test_bounding_crazy[1]"
+              "--deselect=tests/test_plot.py::test_gaussian[True-False-1-multi]")))
+    (native-inputs
+     (list python-pytest
+           python-pytest-xdist
+           python-setuptools
+           python-wheel))
+    (propagated-inputs
+     (list python-h5py
+           python-matplotlib
+           python-numpy
+           python-scipy
+           python-tqdm))
+    (home-page "https://github.com/joshspeagle/dynesty")
+    (synopsis "Dynamic nested sampling computing Bayesian posteriors and evidences")
+    (description
+     "This package implements a Dynamic Nested Sampling for computing Bayesian
+posteriors and evidences.")
+    (license license:expat)))
+
 (define-public r-minimal
   (package (inherit r-with-tests)
     (name "r-minimal")
@@ -670,6 +711,40 @@ like tidy evaluation.")
      "This package provides a @code{tbl_df} class that offers better checking
 and printing capabilities than traditional data frames.")
     (license license:expat)))
+
+(define-public r-xpose4
+  (package
+    (name "r-xpose4")
+    (version "4.7.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/UUPharmacometrics/xpose4")
+             (commit (string-append "V" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1p1mrgb3s7iz61366v36xswn36ivpgqiy7qwxy6yh3hi6y6rjf2j"))))
+    (build-system r-build-system)
+    (native-inputs (list r-testthat))
+    (propagated-inputs (list r-lattice
+                             r-hmisc
+                             r-survival
+                             r-dplyr
+                             r-tibble
+                             r-lazyeval
+                             r-gam
+                             r-readr))
+    (home-page "https://uupharmacometrics.github.io/xpose4/")
+    (synopsis "Diagnostics for nonlinear mixed-effect models")
+    (description
+     "This package is a model building aid for nonlinear mixed-effects
+(population) model analysis using NONMEM, facilitating data set checkout,
+exploration and visualization, model diagnostics, candidate covariate
+identification and model comparison.  The methods are described in
+Keizer et al. (2013) <doi:10.1038/psp.2013.24>, and Jonsson et al.
+(1999) <doi:10.1016/s0169-2607(98)00067-4>.")
+    (license license:lgpl3+)))
 
 (define-public python-vega-datasets
   (package
@@ -1099,15 +1174,15 @@ Meier, Nelson Aalen and regression.")
 (define-public python-mapie
   (package
     (name "python-mapie")
-    (version "0.9.2")
+    (version "1.0.1")
     (source (origin
               (method url-fetch)
-              (uri (pypi-uri "MAPIE" version))
+              (uri (pypi-uri "mapie" version))
               (sha256
                (base32
-                "00qhgfrix5aq7ng1xpvz2gk0d2d2maidbbd8ic9psq1vdqs6vp2a"))))
+                "1bkikqjya6gkds3n4qj6svvyz6czkwrc5s66ffb62l6wi4v2f89a"))))
     (build-system pyproject-build-system)
-    (native-inputs (list python-pandas python-pytest python-setuptools
+    (native-inputs (list python-pandas python-pytest python-setuptools-next
                          python-wheel))
     (propagated-inputs (list python-numpy python-scikit-learn))
     (home-page "https://github.com/scikit-learn-contrib/MAPIE")
@@ -1149,13 +1224,13 @@ sampler for Markov chain Monte Carlo (MCMC).")
 (define-public python-statsmodels
   (package
     (name "python-statsmodels")
-    (version "0.14.0")
+    (version "0.14.2")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "statsmodels" version))
        (sha256
-        (base32 "1927ysv7m46m1x3wz05i0s3r5x0nasmidf2yy54djrp9i7bcfxb8"))
+        (base32 "1bfnxkzdcz5fj7hh1gc021hc3b9181f1mfph4kd1ra6kg8a501c9"))
        (modules '((guix build utils)))
        (snippet
         '(for-each delete-file (find-files "." "\\.c$")))))
@@ -1206,7 +1281,7 @@ inference for statistical models.")
 (define-public python-openturns
   (package
     (name "python-openturns")
-    (version "1.24")
+    (version "1.25")
     (source
      (origin
        (method git-fetch)
@@ -1215,7 +1290,7 @@ inference for statistical models.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1k7vgmlg5dybrbn61nzlsyx2142byi9jv357zv7mzf6b4y133k7k"))))
+        (base32 "0pkxwpdpz5bh7hipys3zg6ippzzy23qydgqjglpxc3g218xmy0cl"))))
     (build-system cmake-build-system)
     (arguments
      (list
@@ -1327,6 +1402,47 @@ independence and others)
 @item Tools for working with empirical distributions (CDF, quantile, etc.)
 @end itemize")
     (license license:bsd-3)))
+
+(define-public python-zeus-mcmc
+  (package
+    (name "python-zeus-mcmc")
+    (version "2.5.4")
+    (source
+     (origin
+       (method git-fetch)        ; no tests in PyPI
+       (uri (git-reference
+             (url "https://github.com/minaskar/zeus")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0sci442fx2bkkj8169hwnx6psl7m2r8y1cicn1xjxxgqaby5j8pi"))))
+    (build-system pyproject-build-system)
+    (native-inputs
+     (list python-pytest
+           python-setuptools
+           python-wheel))
+    (propagated-inputs
+     (list python-matplotlib
+           python-numpy
+           python-scikit-learn
+           python-scipy
+           python-seaborn
+           python-setuptools
+           python-tqdm))
+    (home-page "https://github.com/minaskar/zeus")
+    (synopsis "Deep learning energy measurement and optimization framework")
+    (description
+     "This package provides an implementation of the Ensemble Slice Sampling method.
+Features:
+@itemize
+@item fast & Robust Bayesian Inference
+@item efficient Markov Chain Monte Carlo (MCMC)
+@item black-box inference, no hand-tuning
+@item excellent performance in terms of autocorrelation time and convergence rate
+@item scale to multiple CPUs without any extra effort
+@item automated Convergence diagnostics
+@end itemize")
+    (license license:asl2.0)))
 
 (define-public r-rversions
   (package
@@ -3019,7 +3135,7 @@ Java package that provides routines for various statistical distributions.")
                                    "ess--command-browser-unscoped-essr")))))
             (replace 'check
               (lambda* (#:key tests? #:allow-other-keys)
-                (when tests? (invoke "make" "test"))))))))
+                (when tests? (invoke "make" "-C" "test" "ess"))))))))
     (native-inputs (list perl r-roxygen2 texinfo))
     (inputs (list emacs-minimal r-minimal))
     (propagated-inputs (list emacs-julia-mode))
@@ -3045,6 +3161,10 @@ statistical analysis programs such as R, Julia, and JAGS.")
        (sha256
         (base32 "0a4wx73jkngw5nbq1fa4jfhba6bsmyn6vnsf887x3xhb5v3ykhsg"))))
     (build-system emacs-build-system)
+    (arguments
+     (list #:test-command
+           #~(list "emacs" "-Q" "-batch" "--load" "targets/melpa-init.el"
+                   "--load" "targets/test.el")))
     (propagated-inputs
      (list emacs-ess emacs-poly-noweb emacs-polymode-markdown
            emacs-polymode))
@@ -3071,7 +3191,7 @@ files, including Rmarkdown files.")
         (base32 "0aqalr86d7h9sp9zjkydw3ap4s54qgq2ml6p8gd0gnn1jf0ljm72"))))
     (build-system gnu-build-system)
     (native-inputs
-     (list autoconf automake gnu-gettext libtool))
+     (list autoconf automake gettext-minimal libtool))
     (inputs
      (list zlib))
     (home-page "https://github.com/WizardMac/ReadStat")

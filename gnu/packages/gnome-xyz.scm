@@ -26,6 +26,7 @@
 ;;; Copyright © 2025 Ashvith Shetty <ashvithshetty0010@zohomail.in>
 ;;; Copyright © 2025 Maxim Cournoyer <maxim.cournoyer@gmail.com>
 ;;; Copyright © 2025 Gabriel Santos <gabrielsantosdesouza@disroot.org>
+;;; Copyright © 2025 Noé Lopez <noelopez@free.fr>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -68,6 +69,7 @@
   #:use-module (gnu packages gl)
   #:use-module (gnu packages glib)
   #:use-module (gnu packages gnome)
+  #:use-module (gnu packages gstreamer)
   #:use-module (gnu packages gtk)
   #:use-module (gnu packages ibus)
   #:use-module (gnu packages imagemagick)
@@ -83,7 +85,7 @@
   #:use-module (gnu packages ssh)
   #:use-module (gnu packages textutils)
   #:use-module (gnu packages tls)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages web)
   #:use-module (gnu packages xml)
   #:use-module (gnu packages xorg))
@@ -148,7 +150,7 @@ the Moka icon theme.")
 (define-public delft-icon-theme
   (package
     (name "delft-icon-theme")
-    (version "1.14")
+    (version "1.15")
     (source
      (origin
        (method git-fetch)
@@ -157,7 +159,7 @@ the Moka icon theme.")
              (commit (string-append "v" version))))
        (sha256
         (base32
-         "1iw85cxx9lv7irs28qi3815dk9f9vldv2j7jf1x5l1dqzwaxgwpb"))
+         "1c4hl0zd6zl7kz9aj554ssdp8421fm592c4ybd42gm6icj3r4nvy"))
        (file-name (git-file-name name version))))
     (build-system copy-build-system)
     (arguments
@@ -446,6 +448,56 @@ highlights, and gradients for some depth.")
 cursor set.  This project aims at improving the cursor experience.")
     (license license:gpl3)))
 
+(define-public gapless
+  (package
+    (name "gapless")
+    (version "4.4")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://gitlab.gnome.org/neithern/g4music.git")
+                    (commit (string-append "v" version))))
+              (file-name (git-file-name name version))
+              (sha256
+               (base32
+                "09bph7cznzxclxysp1cd715vzpdhx03pnq6cmgw44mma95lhah6p"))))
+    (build-system meson-build-system)
+    (arguments
+     (list
+      #:glib-or-gtk? #t
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'skip-post-installation
+            (lambda _
+              (substitute* "meson.build"
+                (("gtk_update_icon_cache: true")
+                 "gtk_update_icon_cache: false")
+                (("update_desktop_database: true")
+                 "update_desktop_database: false"))))
+          (add-after 'install 'wrap-gstreamer
+            (lambda _
+              (wrap-program (string-append #$output "/bin/g4music")
+                `("GST_PLUGIN_SYSTEM_PATH" ":" prefix
+                  (,(getenv "GST_PLUGIN_SYSTEM_PATH")))))))))
+    (native-inputs (list `(,glib "bin")
+                         gettext-minimal
+                         pkg-config
+                         vala))
+    (inputs (list gst-plugins-bad       ;mp4
+                  gst-plugins-base      ;for playbin
+                  gst-plugins-good
+                  gstreamer
+                  gtk
+                  libadwaita))
+    (home-page "https://gitlab.gnome.org/neithern/g4music")
+    (synopsis "Light weight music player written in GTK4")
+    (description "Gapless, previously known as G4Music, is a light weight music
+player written in GTK4, focusing on large music collections. This package
+provides the @command{g4music} command.")
+    ;; Most files do not have the header specifying or any later version.
+    ;; Reported at <https://gitlab.gnome.org/neithern/g4music/-/issues/183>.
+    (license (list license:gpl3 license:gpl3+))))
+
 (define-public gnome-plots
   (package
     (name "gnome-plots")
@@ -525,7 +577,7 @@ takes advantage of modern hardware using OpenGL.")
 (define-public portfolio
   (package
     (name "portfolio")
-    (version "1.0.0")
+    (version "1.0.1")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -534,7 +586,7 @@ takes advantage of modern hardware using OpenGL.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1ai9mx801m5lngkljg42vrpvhbvc3071sp4jypsvbzw55hxnn5ba"))))
+                "1s06kd2dhsb143piw89yzwfck7qwzlh4nlgjj2bxpsa3g68c1g11"))))
     (arguments
      (list #:glib-or-gtk? #t
            #:imported-modules `(,@%meson-build-system-modules
@@ -577,6 +629,7 @@ takes advantage of modern hardware using OpenGL.")
      "Portfolio is a minimalist file manager for those who want to use Linux
 mobile devices.  Tap to activate and long press to select, to browse, open,
 copy, move, delete, or edit your files.")
+    (properties `((lint-hidden-cpe-vendors . ("radiustheme"))))
     (license license:gpl3+)))
 
 (define-public gnome-shell-extension-unite-shell
@@ -632,7 +685,7 @@ Ubuntu Unity Shell.")
                 "1k1h9haj0qgcv9hm3hw2nz7ppznp9zrpg922mhrfa6nj97carmqh"))
               (file-name (git-file-name name version))))
     (build-system meson-build-system)
-    (native-inputs (list jq gnu-gettext
+    (native-inputs (list jq gettext-minimal
                          `(,glib "bin")))
     (synopsis "Adds KStatusNotifierItem support to GNOME Shell")
     (description "This extension integrates Ubuntu AppIndicators

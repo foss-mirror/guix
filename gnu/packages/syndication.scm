@@ -1,5 +1,5 @@
 ;;; GNU Guix --- Functional package management for GNU
-;;; Copyright © 2016, 2017, 2019-2024 Efraim Flashner <efraim@flashner.co.il>
+;;; Copyright © 2016, 2017, 2019-2025 Efraim Flashner <efraim@flashner.co.il>
 ;;; Copyright © 2018, 2019, 2021 Tobias Geerinckx-Rice <me@tobias.gr>
 ;;; Copyright © 2020, 2023 Vinicius Monego <monego@posteo.net>
 ;;; Copyright © 2021 Felix Gruber <felgru@posteo.net>
@@ -65,7 +65,7 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages python-web)
   #:use-module (gnu packages qt)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
   #:use-module (gnu packages rust)
   #:use-module (gnu packages sqlite)
   #:use-module (gnu packages time)
@@ -252,8 +252,8 @@ cards.")
              openssl
              pkg-config)
        ;; For building documentation.
-       (if (supported-package? ruby-asciidoctor)
-           (list ruby-asciidoctor)
+       (if (supported-package? ruby-asciidoctor/minimal)
+           (list ruby-asciidoctor/minimal)
            '())))
     (inputs
      (list curl
@@ -294,7 +294,7 @@ cards.")
              rust-section-testing-0.0.5)
        #:phases
        #~(modify-phases %standard-phases
-           #$@(if (not (this-package-native-input "asciidoctor"))
+           #$@(if (not (this-package-native-input "ruby-asciidoctor"))
                   #~((add-after 'unpack 'dont-use-asciidoctor
                        (lambda _
                          (substitute* "config.sh"
@@ -403,7 +403,7 @@ Features:
 (define-public liferea
   (package
     (name "liferea")
-    (version "1.13.4")
+    (version "1.14.6")
     (source
      (origin
        (method git-fetch)
@@ -412,7 +412,7 @@ Features:
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1g9463bvswsm899j6dfhslcg6np70m5wq143mjicr24zy8d17bm7"))))
+        (base32 "1d701rjjpf2d8i88xdl7m9bi5lfl88920aj7wajk3vl1fwg3pzqp"))))
     (build-system glib-or-gtk-build-system)
     (arguments
      `(#:configure-flags

@@ -29,6 +29,8 @@
 ;; Copyright © 2024 Sebastian Dümcke <code@sam-d.com>
 ;; Copyright © 2025 Roman Scherer <roman@burningswell.com>
 ;; Copyright © 2025 Jelle Licht <jlicht@fsfe.org>
+;; Copyright © 2025 Rivulet Cedar <rivulet_cedar@yeah.net>
+;; Copyright © 2025 jgart <jgart@dismail.de>
 
 ;;
 ;; Copying and distribution of this file, with or without modification, are
@@ -37,10 +39,128 @@
 
 (channel-news
  (version 0)
+
+ (entry (commit "8b7208cb8e6b3de3d26c9cc5129a0024d3900642")
+        (title
+         (en "Translations moved to Codeberg")
+         (de "Übersetzungen sind auf Codeberg umgezogen"))
+        (body
+         (en "GNU Guix can now be translated @i{via} Weblate on Codeberg at
+@url{https://translate.codeberg.org/projects/guix/#components} next to where
+the Guix repositories and issue tracker are located.  Reviewing that existing
+translations are useful is of great help as well; please modify where needed.
+We are grateful to Fedora for providing the Weblate translation platform to us
+so far.  Furthermore, Framagit had been hosting the intermediate repository
+where Weblate places translations before maintainers verify their syntax.  The
+intermediate repository is now hosted at
+@url{https://codeberg.org/guix/translations}.  If you had cloned a copy to
+watch the repository previously, please change the repository's upstream URL
+accordingly in your clone's @file{.git/config} file.
+
+See @samp{info \"(guix)Translating Guix\"} for more information on how
+translations are organized.")
+         (de "GNU Guix kann jetzt über Weblate auf Codeberg unter
+@url{https://translate.codeberg.org/projects/guix/#components} übersetzt werden,
+wo auch die Guix-Repositorys und Fehlerberichte abrufbar sind.  Auch zu
+überprüfen, ob bestehende Übersetzungen nützlich sind, hilft uns ebenfalls sehr;
+ändern Sie sie ruhig.  Wir danken Fedora dafür, dass sie uns die
+Weblate-Übersetzungsplattform bisher bereitgestellt haben.  Des Weiteren hatte
+Framagit das zwischengeschaltete Repository gehostet, wo Weblate Übersetzungen
+ablegt, solange Betreuer ihre Syntax noch nicht geprüft haben.  Das
+zwischengeschaltete Repository wird jetzt auf
+@url{https://codeberg.org/guix/translations} gehostet.  Wenn Sie zuvor eine
+Kopie davon geklont hatten, um Änderungen zu verfolgen, ändern Sie bitte die
+Anbieter-URL des Repository in der @file{.git/config}-Datei Ihres Klons.
+
+Siehe @samp{info \"(guix.de)Guix übersetzen\"} für weitere Informationen, wie
+Übersetzungen organisiert sind.")))
+
+ (entry (commit "4aff8591836e3b4125dcbed651efc8607de53280")
+        (title
+         (en "New build system added for @code{clasp-cl}")
+         (de "Neues Erstellungssystem für @code{clasp-cl} hinzugefügt")
+         (es "Se agregó un nuevo sistema de construcción para @code{clasp-cl}"))
+        (body
+         (en "A new build system has been introduced for @code{clasp-cl}.
+             Common Lisp devs using Guix can start using this new build
+             system similarly to others such as @code{asdf-build-system/ecl}.")
+         (de "Ein neues Erstellungssystem wurde für @code{clasp-cl} eingeführt.
+             Entwickler für Common Lisp, die Guix nutzen, können dazu jetzt
+             dieses Erstellungssystem verwenden ähnlich wie die anderen, etwa
+             @code{asdf-build-system/ecl}.")
+         (es "Se ha introducido un nuevo sistema de construcción para
+             @code{clasp-cl}. Los devs de Common Lisp que usan Guix pueden
+             empezar a usar este nuevo sistema de construcción de manera
+             similar a otros como @code{asdf-build-system/ecl}.")))
+
+ (entry (commit "30a5d140aa5a789a362749d057754783fea83dde")
+        (title
+         (en "@command{guix-daemon} privilege escalation vulnerabilities
+fixed (CVE-2025-46415, CVE-2025-46416)")
+         (de "Schwachstellen in @command{guix-daemon} zur Rechteausweitung
+behoben (CVE-2025-46415, CVE-2025-46416)"))
+        (body
+         (en "Vulnerabilities in the build daemon, @command{guix-daemon}, were
+identified and fixed.  One vulnerability would allow any user on the system
+that can interact with the daemon to potentially corrupt new packages built
+locally (CVE-2025-46416).  With the other vulnerability (CVE-2025-46415), if
+@command{guix-daemon} is running as root, it is also possible to escalate to
+root privileges.  CVE-2025-52991, CVE-2025-52992, and CVE-2025-52993 were
+identified as additional opportunities that could have prevented the proposed
+exploits.
+
+Everyone is strongly advised to upgrade @command{guix-daemon}.  Guix System
+users can do this with commands along these lines:
+
+@example
+sudo guix system reconfigure /run/current-system/configuration.scm
+sudo herd restart guix-daemon
+@end example
+
+If you are using Guix on another distro, run @command{info \"(guix) Upgrading
+Guix\"} or visit
+@uref{https://guix.gnu.org/manual/devel/en/html_node/Upgrading-Guix.html} to
+learn how to upgrade Guix.
+
+The root cause of the vulnerability was the ability of a @dfn{fixed-output
+derivation} build process to smuggle a file descriptor to the store or to a
+setuid program to an outside process @i{via} an abstract Unix-domain socket.
+See @uref{https://codeberg.org/guix/guix/pulls/788} for more information.")
+         (de "Schwachstellen im Erstellungs-Daemon @command{guix-daemon} wurden
+erkannt und behoben.  Mit einer der Schwachstellen konnte jeder Benutzer des
+Systems, dem eine Interaktion mit dem Daemon möglich ist, neue lokal erstellte
+Pakete in vielen Fällen manipulieren (CVE-2025-46416).  Mit der anderen
+Schwachstelle (CVE-2025-46415) konnten, sofern @command{guix-daemon} als
+Administratornutzer root läuft, sogar alle Rechte des root-Benutzers erlangt
+werden.  Dabei wurden CVE-2025-52991, CVE-2025-52992 und CVE-2025-52993 als
+zusätzliche Gelegenheiten erkannt, durch die der vorgeschlagene Angriff
+vereitelt hätte werden können.
+
+Wir raten allen deutlich dazu, @command{guix-daemon} zu aktualisieren. Auf
+Guix System können Nutzer dazu Befehle verwenden wie:
+
+@example
+sudo guix system reconfigure /run/current-system/configuration.scm
+sudo herd restart guix-daemon
+@end example
+
+Wenn Sie Guix auf einer anderen Distribution verwenden, erfahren Sie mit dem
+Befehl @command{info \"(guix.de) Aktualisieren von Guix\"} oder auf
+@uref{https://guix.gnu.org/manual/devel/de/html_node/Aktualisieren-von-Guix.html},
+wie Sie Guix aktualisieren.
+
+Die eigentliche Ursache war, dass der Erstellungsprozess einer @dfn{Ableitung
+mit fester Ausgabe} die Möglichkeit hatte, über einen abstrakten
+Unix-Domain-Socket einen Dateideskriptor in den Store
+hinein oder auf ein setuid-Programm zu einem Prozess außerhalb heraus zu
+schmuggeln.  Siehe @uref{https://codeberg.org/guix/guix/pulls/788} für mehr
+Informationen.")))
+
  (entry (commit "78d4b1e52c731502b29288ab6975bd9efa91392a")
         (title
          (en "New services for /etc/profile.d and /etc/bashrc.d")
-         (de "Neue Dienste für /etc/profile.d und /etc/bashrc.d"))
+         (de "Neue Dienste für /etc/profile.d und /etc/bashrc.d")
+         (zh "为 /etc/profile.d 和 /etc/bashrc.d 提供新服务"))
         (body
          (en "Two new services, @code{etc-profile-d-service-type} and
 @code{etc-bashrc-d-service-type}, can now be used to configure and extend your
@@ -69,13 +189,29 @@ nicht beinhaltet, möchten Sie vielleicht
 @code{(service etc-bashrc-d-service-type)} in Ihre Dienstliste aufnehmen, damit
 Bash-Komplettierung weiterhin für neue Benutzer Befehle vervollständigt.  Siehe
 @samp{info \"(guix.de) Service-Referenz\"} für weitere Informationen und
-Beispiele.")))
+Beispiele.")
+         (zh "您现在可在 Guix 中使用新服务 @code{etc-profile-d-service-type}
+和 @code{etc-bashrc-d-service-type} 配置和扩展 shell。这些服务接受一个必须具有
+@file{.sh} 文件扩展名的类文件对象列表。
+
+Guix 现在用 @code{etc-bashrc-d-service-type} 取代了 skeleton
+文件（skeleton file），以提供 Bash
+别名（@file{/etc/bashrc.d/aliases.sh}）。该服务也能通过提供
+@file{/etc/bashrc.d/bash_completion.sh} 来配置
+@code{bash-completion} 包。
+
+如果您的 @code{operating-system} 配置不包含 @code{%base-services} 或
+@code{%desktop-services}，则可能需要将
+@code{(service etc-bashrc-d-service-type)} 添加到 @code{services}
+列表中，以确保 Bash 补全功能对新用户继续有效。更多信息和示例请参阅
+@samp{info \"(guix.zh_CN) 服务参考\"}。")))
 
  (entry (commit "3b6e499d5e635e2189f1bf60279dbf5175c404bd")
         (title
          (en "Guix source code repository moved to Codeberg")
          (de "Repository mit Guix’ Quellcode ist auf Codeberg umgezogen")
-         (fr "Dépôt de code source de Guix déplacé sur Codeberg"))
+         (fr "Dépôt de code source de Guix déplacé sur Codeberg")
+         (zh "Guix 源代码仓库已迁移至 Codeberg"))
         (body
          (en "The canonical URL of the Guix repository is now
 @url{https://git.guix.gnu.org/guix.git}.
@@ -134,7 +270,15 @@ décembre 2025.
 Le Guix Consensus Document (GCD) 002, qui est le résultat du consensus
 construit par la communauté, documente les motivations, les choix et les
 questions ouvertes relatives à cette migration sur Codeberg :
-@url{https://codeberg.org/guix/guix-consensus-documents/src/branch/main/002-codeberg.md}.")))
+@url{https://codeberg.org/guix/guix-consensus-documents/src/branch/main/002-codeberg.md}.")
+         (zh "Guix 仓库的规范 URL 现在是 @url{https://git.guix.gnu.org/guix.git}。
+
+您无需进行任何操作：@command{guix pull} 现在会自动从新 URL 获取（fetch）代码，除非您的 @file{channels.scm} 文件引用了之前的 URL；这种情况下，建议更新文件，不过位于 @code{git.savannah.gnu.org} 的原 URL 将至少一年内继续有效。
+
+现在可以通过 @url{https://codeberg.org/guix/guix} 上的工单（Issue）和合并请求（Pull Request） 机制报告缺陷和提出修改建议。邮件列表 @email{bug-guix@@gnu.org} 和 @email{guix-patches@@gnu.org} 在 2025 年 12 月 31 日之前仍可使用，包括用于提交新的缺陷报告和补丁。
+
+Guix 共识文档 (Guix Consensus Document，GCD) 002 记录了此次迁移至 Codeberg 的动机、选择以及待解决的问题，是社区共识的成果：
+@url{https://codeberg.org/guix/guix-consensus-documents/src/branch/main/002-codeberg.md}。")))
 
  (entry (commit "271a8fc2499135c3f0198bf69c9f2a60f1961bf1")
         (title
@@ -169,14 +313,16 @@ refresh\").")))
  (entry (commit "6e8ffdf3c5afac265e540027c2332573b25461ae")
         (title
          (en "Linux-libre 6.13 removed from Guix")
-         (de "Linux-libre 6.13 wurde aus Guix entfernt"))
+         (de "Linux-libre 6.13 wurde aus Guix entfernt")
+         (zh "Linux-libre 6.13 已从 Guix 中移除"))
         (body
-         (en "The 6.13 linux-libre kernel series has been removed from GNU Guix,
+	 (en "The 6.13 linux-libre kernel series has been removed from GNU Guix,
 because it is no longer supported upstream.  The 6.14 kernel series is now the
 default.")
-         (de "Die Versionsreihe 6.13 des Linux-libre-Kernels wurde aus GNU Guix
+	 (de "Die Versionsreihe 6.13 des Linux-libre-Kernels wurde aus GNU Guix
 entfernt, weil sie von dessen Anbieter nicht mehr unterstützt wird.
-Kernel-Versionsreihe 6.14 ist jetzt vorgegeben.")))
+Kernel-Versionsreihe 6.14 ist jetzt vorgegeben.")
+	 (zh "由于上游不再支持，GNU Guix 已移除 6.13 系列的 linux-libre 内核。6.14 内核系列现已成为默认版本。")))
 
  (entry (commit "ce363c1dc7bd63a74dcf7788d340819f6d5db89f")
         (title

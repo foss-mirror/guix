@@ -18,6 +18,7 @@
 ;;; Copyright © 2020 Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;;; Copyright © 2023 Bruno Victal <mirai@makinata.eu>
 ;;; Copyright © 2025 gemmaro <gemmaro.dev@gmail.com>
+;;; Copyright © 2025 Maxim Cournoyer <maxim@guixotic.coop>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -39,6 +40,7 @@
   #:use-module (gnu packages)
   #:use-module (gnu packages valgrind)
   #:use-module (gnu packages web)
+  #:use-module (gnu packages xml)
   #:use-module (guix gexp)
   #:use-module (guix packages)
   #:use-module (guix download)
@@ -788,6 +790,27 @@ processes is complicated. @code{Test::Fork} provides a function to smooth over
 the complications.")
     (license perl-license)))
 
+(define-public perl-test-future-io-impl
+  (package
+    (name "perl-test-future-io-impl")
+    (version "0.14")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (string-append
+             "mirror://cpan/authors/id/P/PE/PEVANS/Test-Future-IO-Impl-"
+             version ".tar.gz"))
+       (sha256
+        (base32 "0dg2z3nycnsrx8nmyibr7z9nsmz5w6hbrvsnbhr395nlsccvcz80"))))
+    (build-system perl-build-system)
+    (native-inputs (list perl-module-build))
+    (propagated-inputs (list perl-test2-suite))
+    (home-page "https://metacpan.org/release/Test-Future-IO-Impl")
+    (synopsis "Acceptance tests for Future::IO implementations")
+    (description "This module contains a collection of acceptance tests for
+implementations of @code{Future::IO}.")
+    (license perl-license)))
+
 (define-public perl-test-harness
   (package
     (name "perl-test-harness")
@@ -938,6 +961,27 @@ my $object = new MyObject;
 memory_cycle_ok( $object );
 @end example")
     (license artistic2.0)))
+
+(define-public perl-test-metrics-any
+  (package
+    (name "perl-test-metrics-any")
+    (version "0.01")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (string-append
+             "mirror://cpan/authors/id/P/PE/PEVANS/Test-Metrics-Any-" version
+             ".tar.gz"))
+       (sha256
+        (base32 "0s744lv997g1wr4i4vg1d7zpzjfw334hdy45215jf6xj9s6wh1i5"))))
+    (build-system perl-build-system)
+    (native-inputs (list perl-module-build))
+    (propagated-inputs (list perl-metrics-any))
+    (home-page "https://metacpan.org/release/Test-Metrics-Any")
+    (synopsis "Assert that code produces metrics via Metrics::Any")
+    (description "This test module helps write unit tests which assert that
+the code under test reports metrics via @code{Metrics::Any}.")
+    (license perl-license)))
 
 (define-public perl-test-mockmodule
   (package
@@ -1729,6 +1773,26 @@ installed.")
     (description "The Test::WriteVariants module provides for the dynamic
 generation of tests in nested combinations of contexts.")
     (license perl-license)))  ; see LICENSE
+
+(define-public perl-test-xpath
+  (package
+    (name "perl-test-xpath")
+    (version "0.20")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (string-append "mirror://cpan/authors/id/M/MA/MANWAR/Test-XPath-"
+                           version ".tar.gz"))
+       (sha256
+        (base32 "0f90i66i8flk1fj8grzp5lvvhxlrjj4gdg5md6brrba6f4g63anz"))))
+    (build-system perl-build-system)
+    (propagated-inputs (list perl-html-selector-xpath perl-xml-libxml))
+    (home-page "https://metacpan.org/release/Test-XPath")
+    (synopsis "Test XML and HTML content and structure with XPath expressions")
+    (description
+     "This Perl testing library focuses on testing and working with
+XPath expressions, most likely in the context of XML document processing.")
+    (license perl-license)))
 
 (define-public perl-test-yaml
   (package

@@ -40,10 +40,11 @@
 ;;; Copyright © 2023 Jaeme Sifat <jaeme@runbox.com>
 ;;; Copyright © 2024 Suhail <suhail@bayesians.ca>
 ;;; Copyright © 2024 Clément Lassieur <clement@lassieur.org>
-;;; Copyright © 2024 Ashish SHUKLA <ashish.is@lostca.se>
+;;; Copyright © 2024, 2025 Ashish SHUKLA <ashish.is@lostca.se>
 ;;; Copyright © 2024 Ashvith Shetty <ashvithshetty10@gmail.com>
 ;;; Copyright © 2024, 2025 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2025 Roman Scherer <roman@burningswell.com>
+;;; Copyright © 2025 Liam Hupfer <liam@hpfr.net>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -851,7 +852,7 @@ eye-candy, customizable, and reasonably lightweight.")
 (define-public foot
   (package
     (name "foot")
-    (version "1.22.3")
+    (version "1.23.0")
     (home-page "https://codeberg.org/dnkl/foot")
     (source
      (origin
@@ -861,7 +862,7 @@ eye-candy, customizable, and reasonably lightweight.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1l5liw4dgv7hxdimyk5qycmkfjgimdrx51rjvdizpcfmdlkvg518"))))
+        (base32 "0qjsqydfhajr7q89rljlaygf24jaypc8vd0s9ma0za7shq80mc87"))))
     (build-system meson-build-system)
     (arguments
      (list
@@ -878,14 +879,14 @@ eye-candy, customizable, and reasonably lightweight.")
                         (list wayland pkg-config-for-build)
                         '())
                     (list ncurses ;for 'tic'
-                          pkg-config scdoc wayland-protocols-next)))
+                          pkg-config scdoc wayland-protocols)))
     (native-search-paths
      ;; FIXME: This should only be located in 'ncurses'.  Nonetheless it is
      ;; provided for usability reasons.  See <https://bugs.gnu.org/22138>.
      (list (search-path-specification
             (variable "TERMINFO_DIRS")
             (files '("share/terminfo")))))
-    (inputs (list fcft libxkbcommon-1.8 wayland wayland-protocols-next))
+    (inputs (list fcft libxkbcommon-1.8 wayland wayland-protocols))
     (synopsis "Wayland-native terminal emulator")
     (description
      "@command{foot} is a terminal emulator for systems using the Wayland
@@ -990,10 +991,10 @@ minimalistic.")
       (home-page "https://www.uninformativ.de/git/xiate/file/README.html")
       (license license:expat))))
 
-(define-public go-github-com-junegunn-fzf
+(define-public fzf
   (package
-    (name "go-github-com-junegunn-fzf")
-    (version "0.60.2")
+    (name "fzf")
+    (version "0.62.0")
     (source
      (origin
        (method git-fetch)
@@ -1002,12 +1003,48 @@ minimalistic.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32
-         "1c18h9326i8g9ksbfrpzrxpz8xlym2a35fpjsi7dn1dv6rr3jayn"))))
+        (base32 "1kwia7dmsaq08048h3s6avrczvca2mpd8sa3m4r1y28wjqjxmkbk"))))
     (build-system go-build-system)
     (arguments
-     `(#:import-path "github.com/junegunn/fzf"))
-    (inputs
+     (list
+      #:install-source? #f
+      #:import-path "github.com/junegunn/fzf"
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'install 'copy-binaries
+            (lambda* (#:key import-path #:allow-other-keys)
+              (with-directory-excursion (string-append "src/" import-path)
+                (install-file "bin/fzf-tmux" (string-append #$output "/bin")))))
+          (add-after 'copy-binaries 'wrap-programs
+            (lambda _
+              (let* ((bin (string-append #$output "/bin"))
+                     (findutils #$(this-package-input "findutils"))
+                     (ncurses #$(this-package-input "ncurses")))
+                (wrap-program (string-append bin "/fzf")
+                  `("PATH" ":" prefix (,(string-append findutils "/bin"))))
+                (wrap-program (string-append bin "/fzf-tmux")
+                  `("PATH" ":" prefix (,(string-append ncurses "/bin")))))))
+          (add-after 'install 'install-completions
+            (lambda* (#:key import-path #:allow-other-keys)
+              (let* ((bashrc-functions
+                      (string-append #$output "/etc/bashrc.d"))
+                     (fish-functions
+                      (string-append #$output "/share/fish/vendor_functions.d"))
+                     (zsh-completion
+                      (string-append #$output "/share/zsh/site-functions")))
+                (with-directory-excursion (string-append "src/" import-path)
+                  (mkdir-p bashrc-functions)
+                  (copy-file "shell/completion.bash"
+                             (string-append bashrc-functions "/fzf-completion.bash"))
+                  (copy-file "shell/key-bindings.bash"
+                             (string-append bashrc-functions "/fzf-bindings.bash"))
+                  (mkdir-p fish-functions)
+                  (copy-file "shell/key-bindings.fish"
+                             (string-append fish-functions "/fzf_key_bindings.fish"))
+                  (mkdir-p zsh-completion)
+                  (copy-file "shell/completion.zsh"
+                             (string-append zsh-completion "/_fzf")))))))))
+    (native-inputs
      (list go-github-com-charlievieth-fastwalk
            go-github-com-gdamore-tcell-v2
            go-github-com-junegunn-go-shellwords
@@ -1015,60 +1052,15 @@ minimalistic.")
            go-github-com-rivo-uniseg
            go-golang-org-x-sys
            go-golang-org-x-term))
+    (inputs
+     (list bash-minimal
+           findutils
+           ncurses))
     (home-page "https://github.com/junegunn/fzf")
     (synopsis "Command-line fuzzy-finder")
     (description "This package provides an interactive command-line filter
 usable with any list--including files, command history, processes and more.")
     (license license:expat)))
-
-(define-public fzf
-  (package
-    (inherit go-github-com-junegunn-fzf)
-    (name "fzf")
-    (arguments
-     (ensure-keyword-arguments
-      (package-arguments go-github-com-junegunn-fzf)
-      `(#:install-source? #f
-        #:phases
-        (modify-phases %standard-phases
-          (add-after 'install 'copy-binaries
-            (lambda* (#:key outputs #:allow-other-keys)
-              (let ((out (assoc-ref outputs "out")))
-                (with-directory-excursion "src/github.com/junegunn/fzf"
-                  (install-file "bin/fzf-tmux"
-                                (string-append out "/bin"))))))
-          (add-after 'copy-binaries 'wrap-programs
-            (lambda* (#:key outputs inputs #:allow-other-keys)
-              (let* ((out (assoc-ref outputs "out"))
-                     (bin (string-append out "/bin"))
-                     (findutils (assoc-ref inputs "findutils"))
-                     (ncurses (assoc-ref inputs "ncurses")))
-                (wrap-program (string-append bin "/fzf")
-                  `("PATH" ":" prefix (,(string-append findutils "/bin"))))
-                (wrap-program (string-append bin "/fzf-tmux")
-                  `("PATH" ":" prefix (,(string-append ncurses "/bin")))))))
-          (add-after 'install 'install-completions
-            (lambda* (#:key outputs #:allow-other-keys)
-              (let* ((out (assoc-ref outputs "out"))
-                     (bash-completion (string-append out "/etc/bash_completion.d"))
-                     (fish-functions
-                       (string-append out "/share/fish/vendor_functions.d"))
-                     (zsh-completion (string-append out "/share/zsh/site-functions")))
-                (with-directory-excursion "src/github.com/junegunn/fzf"
-                  (mkdir-p bash-completion)
-                  (copy-file "shell/completion.bash"
-                             (string-append bash-completion "/fzf"))
-                  (mkdir-p fish-functions)
-                  (copy-file "shell/key-bindings.fish"
-                             (string-append fish-functions "/fzf_key_bindings.fish"))
-                  (mkdir-p zsh-completion)
-                  (copy-file "shell/completion.zsh"
-                             (string-append zsh-completion "/_fzf"))))))))))
-    (inputs
-     `(,@(package-inputs go-github-com-junegunn-fzf)
-       ("bash" ,bash-minimal) ; for wrap-program
-       ("findutils" ,findutils)
-       ("ncurses" ,ncurses)))))
 
 (define-public python-pyte
   (package
@@ -1319,7 +1311,7 @@ tmux.")
            ncurses ;; for tic command
            pkg-config
            python-sphinx
-           wayland-protocols))
+           wayland-protocols-1.42))
     (inputs
      (list fontconfig
            freetype
@@ -1800,3 +1792,50 @@ support.  It's based on VTE and aimed at power users.")
     (home-page "https://realh.github.io/roxterm/en/index.html")
     ;; src/gresources.c is under LGPL 2.1+
     (license (list license:gpl2+ license:lgpl2.1+))))
+
+(define-public fbterm
+  (package
+    (name "fbterm")
+    (version "1.7")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference (url "https://salsa.debian.org/debian/fbterm.git")
+			   (commit (string-append "upstream/" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32
+         "1nl9z169a59akgb8b5j2pw5fp3bbkmv553rryffkfz45d1cxskvq"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list #:make-flags #~(list (string-append "prefix=" #$output)
+                                "HOME=/tmp"
+
+                                ;; Silence "narrow conversion" errors.
+                                "CXXFLAGS=-Wno-narrowing -O2 -g")))
+    (inputs (list freetype fontconfig ncurses gpm))
+    (native-inputs (list pkg-config))
+    (home-page "https://salsa.debian.org/debian/fbterm")
+    (synopsis "Fast and lightweight framebuffer-based terminal emulator for Linux")
+    (description "FbTerm is a fast terminal emulator for Linux with frame
+buffer device or VESA video card.  Features include:
+
+@itemize
+@item mostly as fast as terminal of Linux kernel while accelerated scrolling
+is enabled;
+@item select font with fontconfig and draw text with freetype2, same as
+Qt/Gtk+ based GUI apps;
+@item dynamically create/destroy up to 10 windows initially running default
+shell;
+@item record scrollback history for every window;
+@item auto-detect current locale and convert text encoding, support double
+width scripts like Chinese, Japanese etc;
+@item switch between configurable additional text encodings with hot keys on
+the fly;
+@item copy/paste selected text between windows with mouse when gpm server is
+running;
+@item change the orientation of screen display, a.k.a. screen rotation;
+@item lightweight input method framework with client-server architecture;
+@item background image for eye candy.
+@end itemize")
+    (license license:gpl2+)))

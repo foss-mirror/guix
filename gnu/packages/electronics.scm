@@ -79,14 +79,14 @@
 (define-public comedilib
   (package
     (name "comedilib")
-    (version "0.12.0")
+    (version "0.13.0")
     (source (origin
               (method url-fetch)
               (uri (string-append "https://www.comedi.org/download/comedilib-"
                                   version ".tar.gz"))
               (sha256
                (base32
-                "0wzh23iyix4xj211fsd8hwrdcjhg2w5jswk9kywb1gpd3h8afajj"))))
+                "0jdw5gp02d8q3p4ldjrc3zaw0v435kmn3c95pv094gyxj3pwhacm"))))
     (build-system gnu-build-system)
     (synopsis "Library for Comedi")
     (description "Comedilib is a user-space library that provides a
@@ -276,11 +276,13 @@ which allows one to install the M8 firmware on any Teensy.")
                    license:zlib))))
 
 (define-public minipro
-  ;; Information needed to fix Makefile
-  (let* ((date "2024-09-20 20:55:06 -0700"))
+  ;; When built from a Git repo, minipro expects GIT_DATE to be set to the
+  ;; value of `git show -s --format=%ci'.  When updating the package, run this
+  ;; in a checkout and put the value here.
+  (let* ((date "2025-04-13 21:54:38 -0700"))
     (package
       (name "minipro")
-      (version "0.7.2")
+      (version "0.7.3")
       (source
        (origin
          (method git-fetch)
@@ -289,9 +291,9 @@ which allows one to install the M8 firmware on any Teensy.")
                (commit version)))
          (file-name (git-file-name name version))
          (sha256
-          (base32 "1a7sbbs1byngkh3bh0dxwxk1iw1dx0kvp946y2lxb8rm6b7hwqym"))))
+          (base32 "1525rn5h73xism16vmivd3cz93g8w76h24f0yvbpc35ydc3fkqf7"))))
       (native-inputs (list pkg-config which))
-      (inputs (list libusb))
+      (inputs (list libusb zlib))
       (build-system gnu-build-system)
       (arguments
        (list
@@ -561,6 +563,96 @@ formats.")
 for sigrok.")
     (license license:gpl3+)))
 
+(define-public python-cocotb
+  (package
+    (name "python-cocotb")
+    (version "1.9.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/cocotb/cocotb")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "19mybnhqa2jz134jj8686310fniav5nldiq0y7kbgml81ppai87c"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:test-flags
+      ;; Tests requiring a verilog simulator.
+      #~(list "-k" (string-join
+                    (list "not parallel_cocotb"
+                          "cocotb"
+                          "vhdl_libraries_multiple")
+                    " and not "))
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; Tests requiring a vhdl simulator.
+          (add-after 'check 'check-vhdl
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (setenv "SIM" "nvc")
+                (invoke "pytest" "-vv" "-k" "vhdl_libraries_multiple")))))))
+    (native-inputs
+     (list iverilog
+           nvc
+           python-pytest
+           python-setuptools
+           python-wheel))
+    (propagated-inputs
+     (list python-find-libpython))
+    (home-page "https://github.com/cocotb/cocotb")
+    (synopsis "Library for writing HDL test benches in Python")
+    (description
+     "Coroutine based cosimulation test bench environment for verifying VHDL
+and Verilog RTL using Python.")
+    (license license:bsd-3)))
+
+(define-public python-cocotb-bus
+  ;; XXX: The latest tagged release (2.6.1) was placed on <2023-07-01>, switch
+  ;; to tag when the fresh release is available.
+  (let ((commit "8269cbdacdc26e676eace4e19fc753c96ac9a059")
+        (revision "0"))
+    (package
+      (name "python-cocotb-bus")
+      (version (git-version "0.2.1" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/cocotb/cocotb-bus/")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "12762rdg630dq5qyvnv1g9kc36g0997nx8c5qndl34v6s9fc2152"))))
+      (build-system pyproject-build-system)
+      ;; TODO: Build documentation from <docs>.
+      (arguments
+       (list
+        #:phases
+        #~(modify-phases %standard-phases
+            (replace 'check
+              (lambda* (#:key tests? #:allow-other-keys)
+                (when tests?
+                  (invoke "make" "-k" "-C" "tests")
+                  (invoke "make" "-k" "-C" "examples")))))))
+      (native-inputs
+       (list iverilog
+             nvc
+             python-pytest
+             python-setuptools
+             python-wheel))
+      (propagated-inputs
+       (list python-cocotb
+             python-packaging
+             python-scapy))
+      (home-page "https://github.com/cocotb/cocotb-bus/")
+      (synopsis "Cocotb reusable tools")
+      (description "@code{Cocotb-bus} provides a set of utilities, test benches
+and reusable bus interfaces to be used with @code{cocotb}.")
+      (license license:bsd-3))))
+
 (define-public python-edalize
   (package
     (name "python-edalize")
@@ -675,7 +767,7 @@ design.")
 (define-public python-vsg
   (package
     (name "python-vsg")
-    (version "3.31.0")
+    (version "3.32.0")
     (source
      (origin
        (method git-fetch)
@@ -684,7 +776,7 @@ design.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "08na5iwn6f1gkvklbslhrvdsk9kcqf7hdcn7g27fy0dr6xw9kd82"))))
+        (base32 "0ql96n291zm4j324q8fmlvy8xvrksb8v6fip0g0sw374z86hda53"))))
     (build-system pyproject-build-system)
     (arguments
      (list
@@ -769,7 +861,7 @@ them usable as simple logic analyzer and/or oscilloscope hardware.")
 (define-public symbiyosys
   (package
     (name "symbiyosys")
-    (version "0.52")
+    (version "0.55")
     (source
      (origin
        (method git-fetch)
@@ -778,7 +870,7 @@ them usable as simple logic analyzer and/or oscilloscope hardware.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "06nhkmnl9ymp1wxapc0lnj82knj5q43x0s2rmfshwvs4cijzqm7f"))))
+        (base32 "1nxaijz7afpa1y8i4pbpadgv7kpz8rk02j42kxjpv117lxd3g9za"))))
     (build-system gnu-build-system)
     (arguments
      (list

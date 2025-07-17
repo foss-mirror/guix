@@ -40,7 +40,7 @@
 ;;; Copyright © 2022 Nicolas Graves <ngraves@ngraves.fr>
 ;;; Copyright © 2022 Petr Hodina <phodina@protonmail.com>
 ;;; Copyright © 2023 Christian Miller <christian.miller@dadoes.de>
-;;; Copyright © 2024 John Kehayias <john.kehayias@protonmail.com>
+;;; Copyright © 2024, 2025 John Kehayias <john.kehayias@protonmail.com>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -64,6 +64,7 @@
   #:use-module (guix build-system copy)
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system go)
+  #:use-module (guix build-system pyproject)
   #:use-module (guix build-system python)
   #:use-module (guix build-system qt)
   #:use-module (guix build-system trivial)
@@ -86,6 +87,7 @@
   #:use-module (gnu packages curl)
   #:use-module (gnu packages digest)
   #:use-module (gnu packages docbook)
+  #:use-module (gnu packages dotnet)
   #:use-module (gnu packages file)
   #:use-module (gnu packages freedesktop)
   #:use-module (gnu packages gettext)
@@ -98,6 +100,7 @@
   #:use-module (gnu packages golang-web)
   #:use-module (gnu packages gtk)
   #:use-module (gnu packages guile)
+  #:use-module (gnu packages image)
   #:use-module (gnu packages kerberos)
   #:use-module (gnu packages libffi)
   #:use-module (gnu packages libusb)
@@ -111,11 +114,14 @@
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages protobuf)
   #:use-module (gnu packages python)
+  #:use-module (gnu packages python-build)
+  #:use-module (gnu packages python-crypto)
   #:use-module (gnu packages python-web)
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages rdesktop)
   #:use-module (gnu packages readline)
   #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
   #:use-module (gnu packages security-token)
   #:use-module (gnu packages suckless)
   #:use-module (gnu packages tcl)
@@ -242,7 +248,8 @@ human.")
          (list "-DWITH_XC_ALL=YES"
                "-DWITH_XC_UPDATECHECK=NO")
          #$(if (member (%current-system)
-                       (package-transitive-supported-systems ruby-asciidoctor))
+                       (package-transitive-supported-systems
+                        ruby-asciidoctor/minimal))
                #~'()
                #~(list "-DWITH_XC_DOCS=NO")))
       #:phases
@@ -283,8 +290,9 @@ human.")
      (append
       (list qttools-5)
       (if (member (%current-system)
-                  (package-transitive-supported-systems ruby-asciidoctor))
-          (list ruby-asciidoctor)
+                  (package-transitive-supported-systems
+                   ruby-asciidoctor/minimal))
+          (list ruby-asciidoctor/minimal)
           '())))
     (inputs
      (list argon2
@@ -318,6 +326,124 @@ algorithms AES or Twofish.")
     ;; While various parts of the software are licensed under different licenses,
     ;; the combined work falls under the GPLv3.
     (license license:gpl3)))
+
+(define-public keepass
+  (package
+    (name "keepass")
+    (version "2.57.1")
+    (source
+     (origin
+       (method url-fetch)
+       (uri
+        (string-append "mirror://sourceforge/keepass/KeePass%202.x/" version
+         "/KeePass-" version "-Source.zip"))
+       (sha256 (base32 "11i9h0pbvbmz3a6wkp97qhrc8r4l5a2iwxw6vl0zwcp19ka5gdpp"))))
+    (build-system gnu-build-system)
+    (arguments
+     `(#:phases
+       (modify-phases %standard-phases
+         (replace 'unpack
+           (lambda* (#:key source #:allow-other-keys)
+             (mkdir "source")
+             (chdir "source")
+             (invoke "unzip" source)))
+         (replace 'configure
+           (lambda* (#:key inputs #:allow-other-keys)
+             ;; Make reproducible by setting build number to 0.
+             (substitute* "KeePass/Properties/AssemblyInfo.cs"
+              (("AssemblyVersion[(]\"2.57.1.*\"[)]")
+               "AssemblyVersion(\"2.57.1.0\")"))
+             (substitute* "KeePassLib/Native/NativeMethods.Unix.cs"
+              (("libgcrypt.so.20" all)
+               (string-append (search-input-file inputs (string-append "/lib/" all))))
+              (("libglib-2.0.so.0" all)
+               (string-append (search-input-file inputs (string-append "/lib/" all))))
+              (("libgtk-3.so.0" all)
+               (string-append (search-input-file inputs (string-append "/lib/" all)))))
+             (substitute* "KeePass.sln"
+               (("GlobalSection\\(ExtensibilityGlobals\\).*?EndGlobalSection")
+                "")
+               (("GlobalSection\\(ExtensibilityGlobals\\).*?EndGlobalSection"
+                 all)
+                "")
+               (("Format Version 10\\.0")
+                "Format Version 11.00"))
+             (substitute* "KeePass/KeePass.csproj"
+               ((" ToolsVersion=\\\"3\\.5\\\"")
+                " ToolsVersion=\"4.0\"")
+               (("<SignAssembly>true</SignAssembly>")
+                "<SignAssembly>false</SignAssembly>")
+               ;; XML Serializer AOT compiler doesn't work here.
+               ;; mono will just fall back to the runtime compiler.
+               (("[$][(]FrameworkSDKDir[)]bin.sgen[.]exe")
+                "echo")
+               (("<TargetFrameworkVersion>v4\\.8</TargetFrameworkVersion>")
+                "<TargetFrameworkVersion>v4.5</TargetFrameworkVersion>"))
+             (copy-file
+              "Ext/Icons_15_VA/LowResIcons/KeePass_LR.ico"
+              "KeePass/KeePass.ico")
+             (copy-file
+              "Ext/Icons_15_VA/LowResIcons/KeePass_LR.ico"
+              "KeePass/IconsKeePass.ico")
+             (copy-file
+              "Ext/Icons_15_VA/LowResIcons/KeePass_LR_G.ico"
+              "KeePass/IconsKeePass_G.ico")
+             (copy-file
+              "Ext/Icons_15_VA/LowResIcons/KeePass_LR_R.ico"
+              "KeePass/IconsKeePass_R.ico")
+             (copy-file
+              "Ext/Icons_15_VA/LowResIcons/KeePass_LR_Y.ico"
+              "KeePass/IconsKeePass_Y.ico")
+             (substitute* "KeePassLib/KeePassLib.csproj"
+               ((" ToolsVersion=\\\"3\\.5\\\"")
+                " ToolsVersion=\"4.0\"")
+               (("<SignAssembly>true</SignAssembly>")
+                "<SignAssembly>false</SignAssembly>"))
+             (substitute* "Translation/TrlUtil/TrlUtil.csproj"
+               ((" ToolsVersion=\\\"3\\.5\\\"") " ToolsVersion=\"4.0\""))
+             (copy-file
+              "Ext/Icons_15_VA/LowResIcons/KeePass_LR.ico"
+              "KeePass/Resources/KeePass.ico")))
+         (delete 'patch-source)
+         (replace 'build
+           (lambda* (#:key outputs #:allow-other-keys)
+             (setenv "MONO_REGISTRY_PATH" "/dev/null")
+             (setenv "LANG" "C")
+             (setenv "LC_ALL" "C")
+             (invoke
+              "xbuild"
+              "/target:KeePass"
+              "/property:Configuration=Release"
+              "/property:CscToolExe=mcs"
+              "/verbosity:diagnostic")))
+         (replace 'install
+           (lambda* (#:key inputs outputs #:allow-other-keys)
+             (let* ((out (assoc-ref outputs "out"))
+                    (script (string-append out "/bin/keepass"))
+                    (mono (assoc-ref inputs "mono"))
+                    (lib (string-append out "/lib/keepass")))
+               (install-file "KeePass/obj/Release/KeePass.exe" lib)
+               (install-file "Ext/KeePass.config.xml" lib)
+               (mkdir (string-append out "/bin"))
+               (call-with-output-file script
+                   (lambda (port)
+                     (format port "#!/bin/sh
+exec ~s/bin/mono ~s/lib/keepass/KeePass.exe \"$@\"
+"
+                             mono out)))
+               (chmod script #o755)
+               (patch-shebang script)))))
+       #:tests? #f)) ;no tests
+    (native-inputs (list unzip icoutils))
+    (inputs (list mono libgdiplus libgcrypt glib gtk+))
+    (home-page "https://keepass.info/")
+    (synopsis
+     "Light-weight and easy-to-use password manager")
+    (description
+     "KeePass is a light-weight and easy-to-use password manager that helps
+you manage your passwords in a secure way.  All passwords are stored
+in an encrypted database, which is locked with a master key or key file.")
+    (license license:gpl2)))
 
 (define-public pwsafe
   (package
@@ -1270,10 +1396,54 @@ winner of the 2015 Password Hashing Competition.")
     ;; files are CC0 only; see README.md and LICENSE for details.
     (license (list license:cc0 license:asl2.0))))
 
+(define-public secretsd
+  ;; there are neither tags nor releases in the repository
+  (let ((commit "4ea56226b8f7c8739eea7fc8d1ffca8e18cf58c9")
+        (revision "0"))
+    (package
+      (name "secretsd")
+      (version (git-version "1.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/grawity/secretsd")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0ka21vmvm25kal3sa8zmrifh4zac878hk24y7y3jj3ig8dkv0vfy"))
+         (modules '((guix build utils)))
+         (snippet
+          ;; don't install platform dependencies
+          #~(substitute* "setup.py" ((".*install_requires.*") "")))))
+      (build-system pyproject-build-system)
+      (arguments
+       (list
+        #:phases
+        #~(modify-phases %standard-phases
+            (add-after 'create-entrypoints 'wrap-program
+              (lambda _
+                (wrap-program (string-append #$output "/bin/secretsd")
+                  `("GI_TYPELIB_PATH" ":" prefix
+                    (,(getenv "GI_TYPELIB_PATH")))))))))
+      (inputs (list python-dbus python-platformdirs python-cryptography
+                    python-xdg python-pygobject))
+      (native-inputs (list bash-minimal python-setuptools python-wheel))
+      (home-page "https://github.com/grawity/secretsd")
+      (synopsis "Basic FreeDesktop.org Secret Service backend")
+      (description
+       "@code{secretsd} is a generic backend for the @code{libsecret} @acronym{API,
+application programming interface} to use on headless systems or minimal desktop
+environments.  It stores secrets in a @code{sqlite} database, encrypted using a
+@acronym{AES, Advanced Encryption Standard} key.  The database key is stored in a
+regular file next to the database by default, but can be read from an external
+program.")
+      (license license:expat))))
+
 (define-public pass-git-helper
   (package
     (name "pass-git-helper")
-    (version "1.1.0")
+    (version "3.3.0")
     (source
      (origin
        (method git-fetch)
@@ -1283,8 +1453,8 @@ winner of the 2015 Password Hashing Competition.")
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "18nvwlp0w4aqj268wly60rnjzqw2d8jl0hbs6bkwp3hpzzz5g6yd"))))
-    (build-system python-build-system)
+         "0nih6wxbpnasngdkbyh9df8wrm4b5inca8mshkqpmraqqmckzrk3"))))
+    (build-system pyproject-build-system)
     (arguments
      `(#:phases
        (modify-phases %standard-phases
@@ -1294,16 +1464,18 @@ winner of the 2015 Password Hashing Competition.")
                     (pass (string-append password-store "/bin/pass")))
                (substitute* '("passgithelper.py"
                               "test_passgithelper.py")
-                 (("'pass'") (string-append "'" pass "'")))
-               #t)))
-         (replace 'check
+                 (("'pass'") (string-append "'" pass "'"))))))
+         (add-before 'check 'set-home
            (lambda _
-             (setenv "HOME" (getcwd))
-             (invoke "pytest"))))))
+             (setenv "HOME" (getcwd)))))))
     (inputs
      (list python-pyxdg password-store))
     (native-inputs
-     (list python-pytest python-pytest-mock))
+     (list python-pytest
+           python-pytest-cov
+           python-pytest-mock
+           python-setuptools
+           python-wheel))
     (home-page "https://github.com/languitar/pass-git-helper")
     (synopsis "Git credential helper interfacing with pass")
     (description "pass-git-helper is a git credential helper which
@@ -1739,47 +1911,51 @@ encryption algorithm if so desired.")
       (license license:gpl3))))
 
 (define-public pass-tomb
-  (package
-    (name "pass-tomb")
-    (version "1.3")
-    (source
-     (origin
-       (method git-fetch)
-       (uri (git-reference
-             (url "https://github.com/roddhjav/pass-tomb")
-             (commit (string-append "v" version))))
-       (file-name (git-file-name name version))
-       (sha256
-        (base32 "1sjkbdm2i3v77nbnap8sypbfdqwxckc8h66g3ixjnyr6cqgcrdli"))))
-    (build-system gnu-build-system)
-    (arguments
-     `(#:make-flags
-       (let ((out (assoc-ref %outputs "out")))
-         (list (string-append "PREFIX=" out)
-               (string-append "BASHCOMPDIR=" out "/etc/bash_completion.d")))
-       #:test-target "tests"
-       ;; tests are very dependent on system state (swap partition) and require
-       ;; access to /tmp/zsh which is not in the build container.
-       #:tests? #f
-       #:phases
-       (modify-phases %standard-phases
-         (add-after 'unpack 'set-tomb-path
-           (lambda* (#:key inputs #:allow-other-keys)
-             (let ((tomb (assoc-ref inputs "tomb")))
-               (substitute* "tomb.bash"
-                 ((":-tomb")
-                  (string-append ":-" tomb "/bin/tomb"))))))
-         (delete 'configure))))
-    (inputs
-     (list tomb))
-    (home-page "https://github.com/roddhjav/pass-tomb")
-    (synopsis "Pass extension keeping the tree of passwords encrypted")
-    (description "Pass-tomb provides a convenient solution to put your
+  ;; Latest release is 4 years old.
+  (let ((commit "f4f34f4fc1ce7055fac74ad96686be49f7c28c349")
+        (revision "0"))
+    (package
+      (name "pass-tomb")
+      (version (git-version "1.3" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/roddhjav/pass-tomb")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0cwik9v5pspyi0kgq6d2kaqy6gj3dgfn97nbjcbkbrbbc7syyd3v"))))
+      (build-system gnu-build-system)
+      (arguments
+       (list
+        #:make-flags
+        #~(list (string-append "PREFIX=" #$output)
+                (string-append "BASHCOMPDIR=" #$output
+                               "/share/bash-completion/completions"))
+        #:test-target "tests"
+        ;; tests are very dependent on system state (swap partition) and require
+        ;; access to /tmp/zsh which is not in the build container.
+        #:tests? #f
+        #:phases
+        #~(modify-phases %standard-phases
+            (add-after 'unpack 'set-tomb-path
+              (lambda* (#:key inputs #:allow-other-keys)
+                (let ((tomb (assoc-ref inputs "tomb")))
+                  (substitute* "tomb.bash"
+                    ((":-tomb")
+                     (string-append ":-" tomb "/bin/tomb"))))))
+            (delete 'configure))))
+      (inputs
+       (list tomb))
+      (home-page "https://github.com/roddhjav/pass-tomb")
+      (synopsis "Pass extension keeping the tree of passwords encrypted")
+      (description "Pass-tomb provides a convenient solution to put your
 password store in a Tomb and then keep your password tree encrypted when you
 are not using it.  It uses the same GPG key to encrypt passwords and tomb,
 therefore you don't need to manage more key or secret.  Moreover, you can ask
 pass-tomb to automatically close your store after a given time.")
-    (license license:gpl3+)))
+      (license license:gpl3+))))
 
 (define-public pass-coffin
   (package

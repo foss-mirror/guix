@@ -1,6 +1,6 @@
 ;;; GNU Guix --- Functional package management for GNU
 ;;; Copyright © 2013, 2015 Andreas Enge <andreas@enge.fr>
-;;; Copyright © 2014-2023 Ludovic Courtès <ludo@gnu.org>
+;;; Copyright © 2014-2023, 2025 Ludovic Courtès <ludo@gnu.org>
 ;;; Copyright © 2014 Ian Denhardt <ian@zenhack.net>
 ;;; Copyright © 2014, 2016, 2020 Eric Bavier <bavier@posteo.net>
 ;;; Copyright © 2014, 2015 Federico Beffa <beffa@fbengineering.ch>
@@ -211,7 +211,7 @@
   #:use-module (gnu packages rdesktop)
   #:use-module (gnu packages rdf)
   #:use-module (gnu packages readline)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages rust)
   #:use-module (gnu packages samba)
   #:use-module (gnu packages scanner)
@@ -2445,6 +2445,11 @@ The gnome-about program helps find which version of GNOME is installed.")
             (lambda _
               (substitute* "meson-postinstall.sh"
                 (("update-desktop-database") (which "true")))))
+          (add-before 'configure 'relax-gcc-14-strictness
+            (lambda _
+              (setenv "CFLAGS"
+                      (string-append "-g -O2"
+                                     " -Wno-error=incompatible-pointer-types"))))
           (add-after 'install 'patch-thumbnailer
             (lambda* (#:key outputs #:allow-other-keys)
               (substitute*
@@ -8484,31 +8489,31 @@ Evolution (hence the name), but is now used by other packages as well.")
                 "0mfychh1q3dx0b96pjz9a9y112bm9yqyim40yykzxx1hppsdjhww"))))
     (build-system glib-or-gtk-build-system)
     (arguments
-     '(#:phases
-       (modify-phases %standard-phases
-         (add-before
-          'build 'pre-build
-          (lambda* (#:key outputs #:allow-other-keys)
-            (let ((out (assoc-ref outputs "out")))
-              ;; Use absolute shared library path in Caribou-1.0.typelib.
-              (substitute* "libcaribou/Makefile"
-                (("--shared-library=libcaribou.so")
-                 (string-append "--shared-library="
-                                out "/lib/libcaribou.so")))
-              #t)))
+     (list
+      #:configure-flags
+      ;; Relax gcc-14's strictness.
+      #~(list "CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types")
+      #:phases
+       #~(modify-phases %standard-phases
+           (add-before
+               'build 'pre-build
+             (lambda _
+               ;; Use absolute shared library path in Caribou-1.0.typelib.
+               (substitute* "libcaribou/Makefile"
+                 (("--shared-library=libcaribou.so")
+                  (string-append "--shared-library="
+                                 #$output "/lib/libcaribou.so")))))
          (add-after 'install 'wrap-programs
           (lambda* (#:key outputs #:allow-other-keys)
-            (let* ((out (assoc-ref outputs "out"))
-                   (python-path (getenv "GUIX_PYTHONPATH"))
-                   (gi-typelib-path (getenv "GI_TYPELIB_PATH")))
+            (let ((python-path (getenv "GUIX_PYTHONPATH"))
+                  (gi-typelib-path (getenv "GI_TYPELIB_PATH")))
               (for-each
                (lambda (prog)
                  (wrap-program prog
                    `("GUIX_PYTHONPATH"      ":" prefix (,python-path))
                    `("GI_TYPELIB_PATH" ":" prefix (,gi-typelib-path))))
-               (list (string-append out "/bin/caribou-preferences")
-                     (string-append out "/libexec/antler-keyboard"))))
-            #t)))))
+               (list (string-append #$output "/bin/caribou-preferences")
+                     (string-append #$output "/libexec/antler-keyboard")))))))))
     (native-inputs
      `(("glib:bin" ,glib "bin") ; for glib-compile-schemas, etc.
        ("gobject-introspection" ,gobject-introspection)
@@ -8546,7 +8551,9 @@ users.")
                                         "NetworkManager/NetworkManager"))
                     (commit version)))
               (file-name (git-file-name name version))
-              (patches (search-patches "network-manager-plugin-path.patch"))
+              (patches (search-patches
+                        "network-manager-plugin-ownership.patch"
+                        "network-manager-plugin-path.patch"))
               (sha256
                (base32
                 "0fx3yvqrwc9fqphhwvchxls0lgizlz7bxww3riijlvx3pkypqbyr"))))
@@ -9368,7 +9375,7 @@ devices using the GNOME desktop.")
     (build-system meson-build-system)
     (arguments (list #:glib-or-gtk? #t))
     (inputs (list gtk libadwaita))
-    (native-inputs (list `(,glib "bin") gnu-gettext pkg-config))
+    (native-inputs (list `(,glib "bin") gettext-minimal pkg-config))
     (home-page "https://gitlab.gnome.org/GNOME/tecla")
     (synopsis "Keyboard layout viewer")
     (description "Tecla is a keyboard layout viewer based on GTK 4 and
@@ -10967,7 +10974,7 @@ to perfectly fit the GNOME desktop.")
     (native-inputs (list blueprint-compiler
                          desktop-file-utils
                          `(,glib "bin")
-                         gnu-gettext
+                         gettext-minimal
                          gobject-introspection
                          `(,gtk "bin")
                          pkg-config))
@@ -11171,7 +11178,13 @@ functionality and behavior.")
            (lambda _
              (substitute* "meson.build"
                (("gtk_update_icon_cache: true")
-                "gtk_update_icon_cache: false")))))))
+                "gtk_update_icon_cache: false"))))
+          (add-before 'configure 'relax-gcc-14-strictness
+            (lambda _
+              (setenv "CFLAGS"
+                      (string-append "-g -O2"
+                                     " -Wno-error=implicit-function-declaration"
+                                     " -Wno-error=incompatible-pointer-types")))))))
     (inputs
      (list bdb
            dbus-glib
@@ -11496,14 +11509,14 @@ supports both X and Wayland display servers.")
 (define-public bluefish
   (package
     (name "bluefish")
-    (version "2.2.14")
+    (version "2.2.17")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://www.bennewitz.com/bluefish/stable/source/"
                            "bluefish-" version ".tar.gz"))
        (sha256
-        (base32 "0427xihrr7l1475qr3n40hz2xz6bqmfdbdg9pn8q7rvhvajyvjx7"))))
+        (base32 "17ampw9p1fp7s7i43cz9r68v6mm7xmb1sndx1mqmkns35kn8yl8a"))))
     (build-system gnu-build-system)
     (native-inputs
      (list desktop-file-utils intltool pkg-config))
@@ -11788,14 +11801,14 @@ views can be printed as PDF or PostScript files, or exported to HTML.")
 (define-public lollypop
   (package
     (name "lollypop")
-    (version "1.4.40")
+    (version "1.4.42")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://adishatz.org/lollypop/"
                            "lollypop-" version ".tar.xz"))
        (sha256
-        (base32 "1laj5xwfz2bz29scga2ahhnhlgll4a0n21wwy8mlr4jsl81g0jsa"))))
+        (base32 "15bpg217vqbnspnls5mjg05424i6c9wd6g9ryr3h96lbgg90l93s"))))
     (build-system meson-build-system)
     (arguments
      (list #:imported-modules `(,@%meson-build-system-modules
@@ -11895,6 +11908,10 @@ photo-booth-like software, such as Cheese.")
                    (substitute* "meson.build"
                      (("gtk_update_icon_cache: true")
                       "gtk_update_icon_cache: false"))))
+               (add-before 'configure 'relax-gcc-14-strictness
+                 (lambda _
+                   (setenv "CFLAGS"
+                           "-g -O2 -Wno-error=incompatible-pointer-types")))
                (add-after 'install 'wrap-cheese
                  (lambda* (#:key inputs outputs #:allow-other-keys)
                    (wrap-program (search-input-file outputs "bin/cheese")
@@ -12380,7 +12397,7 @@ advanced image management tool")
 (define-public terminator
   (package
     (name "terminator")
-    (version "2.1.4")
+    (version "2.1.5")
     (source
      (origin
        (method url-fetch)
@@ -12388,7 +12405,7 @@ advanced image management tool")
                            "releases/download/v" version "/"
                            name "-" version ".tar.gz"))
        (sha256
-        (base32 "1s65y2yjrigbvqzgxvwr8pj199199bx7m0nhf7g1vrk2x3nb09xg"))))
+        (base32 "00qfbmbnqwwyxdn6y4729y39wpym8n8n2l6qfd8mvd1xppc9q8gh"))))
     (build-system python-build-system)
     (native-inputs
      `(("gettext" ,gettext-minimal)
@@ -14194,7 +14211,7 @@ historical battery usage and related statistics.")
               ;; This is done so we can override.
               (("`set.PREFIX_BIN") "set(QPREFIX_BIN")))))))
     (native-inputs
-     (list cmake pkg-config intltool gnu-gettext))
+     (list cmake pkg-config intltool gettext-minimal))
     (inputs
      (list glib gtk+ libx11 libsm libxv libxaw libxcb libxkbfile
            shared-mime-info))

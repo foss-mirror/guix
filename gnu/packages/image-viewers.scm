@@ -29,6 +29,7 @@
 ;;; Copyright © 2022 Cairn <cairn@pm.me>
 ;;; Copyright © 2023 Florian Pelz <pelzflorian@pelzflorian.de>
 ;;; Copyright © 2024 Artyom V. Poptsov <poptsov.artyom@gmail.com>
+;;; Copyright © 2025 Ashish SHUKLA <ashish.is@lostca.se>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -122,7 +123,7 @@
 (define-public swayimg
   (package
     (name "swayimg")
-    (version "4.0")
+    (version "4.5")
     (source
      (origin
        (method git-fetch)
@@ -131,7 +132,7 @@
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1ydy6qi3jkm629gk1lw0ay6ly82z165bfj95v1ix7r1ymm9rljfr"))))
+        (base32 "11j1xxi0q7fw9ka55yrkwzjg1n61n0i6iyzsmsjg8xqx7wxbsxqf"))))
     (build-system meson-build-system)
     (arguments
      `(#:configure-flags '(,(string-append "-Dversion=" version))))
@@ -999,7 +1000,7 @@ to set X desktop background.")
 (define-public pqiv
   (package
     (name "pqiv")
-    (version "2.12")
+    (version "2.13.2")
     (source
      (origin
        (method git-fetch)
@@ -1008,7 +1009,7 @@ to set X desktop background.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "18nvrqmlifh4m8nfs0d19sb9d1l3a95xc89qxqdr881jcxdsgflw"))))
+        (base32 "1yic98a5j77vkc31qpyyikfgpv1gq36ymqdpc3q4gc5zdmw3r4y2"))))
     (build-system gnu-build-system)
     (native-inputs
      (list pkg-config))

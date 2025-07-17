@@ -55,10 +55,12 @@
   #:use-module ((guix docker) #:select (%docker-image-max-layers))
   #:use-module (gnu compression)
   #:use-module (gnu packages)
-  #:use-module (gnu packages bootstrap)
-  #:use-module ((gnu packages compression) #:hide (zip))
-  #:use-module (gnu packages guile)
-  #:use-module (gnu packages base)
+  #:autoload   (gnu packages bootstrap) (%bootstrap-coreutils&co
+                                         %bootstrap-inputs
+                                         %bootstrap-guile)
+  #:autoload   (gnu packages compression) (gzip squashfs-tools)
+  #:autoload   (gnu packages guile) (guile-json-3 guile-sqlite3)
+  #:autoload   (gnu packages base) (binutils tar libc-utf8-locales-for-target)
   #:autoload   (gnu packages appimage) (appimage-type2-runtime)
   #:autoload   (gnu packages gnupg) (guile-gcrypt)
   #:autoload   (gnu packages guile) (guile2.0-json guile-json)
@@ -90,7 +92,7 @@
 ;;; Code:
 
 ;; This one is only for use in this module, so don't put it in %compressors.
-(define bootstrap-xz
+(define (bootstrap-xz)
   (compressor "bootstrap-xz" ".xz"
               #~(append (list #+(file-append %bootstrap-coreutils&co "/bin/xz")
                               "-e")
@@ -104,15 +106,6 @@
     (('gnu _ ...) #t)
     (_ #f)))
 
-(define gcrypt-sqlite3&co
-  ;; Guile-Gcrypt, Guile-SQLite3, and their propagated inputs.
-  (append-map (lambda (package)
-                (cons package
-                      (match (package-transitive-propagated-inputs package)
-                        (((labels packages) ...)
-                         packages))))
-              (list guile-gcrypt guile-sqlite3)))
-
 (define (store-database items)
   "Return a directory containing a store database where all of ITEMS and their
 dependencies are registered."
@@ -125,6 +118,15 @@ dependencies are registered."
     (map (lambda (n)
            (string-append "closure" (number->string n)))
          (iota (length items))))
+
+  (define gcrypt-sqlite3&co
+    ;; Guile-Gcrypt, Guile-SQLite3, and their propagated inputs.
+    (append-map (lambda (package)
+                  (cons package
+                        (match (package-transitive-propagated-inputs package)
+                          (((labels packages) ...)
+                           packages))))
+                (list guile-gcrypt guile-sqlite3)))
 
   (define build
     (with-extensions gcrypt-sqlite3&co
@@ -312,25 +314,12 @@ added to the pack."
   "Return a shell script that defines the environment variables corresponding
 to the search paths of PROFILE."
   (define build
-    (with-extensions (list guile-gcrypt)
-      (with-imported-modules `(((guix config) => ,(make-config.scm))
-                               ,@(source-module-closure
-                                  `((guix profiles)
-                                    (guix search-paths))
-                                  #:select? not-config?))
-        #~(begin
-            (use-modules (guix profiles) (guix search-paths)
-                         (ice-9 match))
+    #~(begin
+        (use-modules (ice-9 match))
 
-            (call-with-output-file #$output
-              (lambda (port)
-                (for-each (match-lambda
-                            ((spec . value)
-                             (format port "~a=~a~%export ~a~%"
-                                     (search-path-specification-variable spec)
-                                     value
-                                     (search-path-specification-variable spec))))
-                          (profile-search-paths #$profile))))))))
+        (call-with-output-file #$output
+          (lambda (port)
+            (format port ". ~a/etc/profile~%" #$profile)))))
 
   (computed-file "singularity-environment.sh" build))
 
@@ -580,9 +569,10 @@ layers."
                      (,source -> ,target))))))
 
             (define directives
-              ;; Create a /tmp directory, as some programs expect it, and
-              ;; create SYMLINKS.
+              ;; Create the /tmp and %store-prefix directories, as some
+              ;; programs expect them, and create SYMLINKS.
               `((directory "/tmp" ,(getuid) ,(getgid) #o1777)
+                (directory #$(%store-prefix) ,(getuid) ,(getgid) #o755)
                 ,@(append-map symlink->directives '#$symlinks)))
 
             (define (form-entry-point prefix entry-point entry-point-argument)
@@ -1761,7 +1751,10 @@ Create a bundle of PACKAGE.\n"))
                      (load* file user-module)))
                  manifests)))
           (else
-           (packages->manifest packages))))))
+           (packages->manifest packages
+                               #:properties (if (assoc-ref opts 'save-provenance?)
+                                                default-package-properties
+                                                (const '()))))))))
 
     (define (process-file-arg opts name)
       ;; Validate that the file exists and return it as a <local-file> object,
@@ -1837,7 +1830,7 @@ Create a bundle of PACKAGE.\n"))
                    (target      (assoc-ref opts 'target))
                    (bootstrap?  (assoc-ref opts 'bootstrap?))
                    (compressor  (if bootstrap?
-                                    bootstrap-xz
+                                    (bootstrap-xz)
                                     (assoc-ref opts 'compressor)))
                    (archiver    (if (equal? pack-format 'squashfs)
                                     squashfs-tools

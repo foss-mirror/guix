@@ -43,6 +43,7 @@
 ;;; Copyright © 2024 Nguyễn Gia Phong <mcsinyx@disroot.org>
 ;;; Copyright © 2025 Frederick Muriuki Muriithi <fredmanglis@gmail.com>
 ;;; Copyright © 2025 nomike Postmann <nomike@nomike.com>
+;;; Copyright © 2025 Matthew Elwin <elwin@northwestern.edu>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -81,6 +82,7 @@
   #:use-module (gnu packages)
   #:use-module (gnu packages algebra)
   #:use-module (gnu packages autotools)
+  #:use-module (gnu packages backup)
   #:use-module (gnu packages base)
   #:use-module (gnu packages bash)
   #:use-module (gnu packages bdw-gc)
@@ -99,6 +101,7 @@
   #:use-module (gnu packages digest)
   #:use-module (gnu packages docbook)
   #:use-module (gnu packages documentation)
+  #:use-module (gnu packages emacs-build)
   #:use-module (gnu packages emacs-xyz)
   #:use-module (gnu packages file)
   #:use-module (gnu packages flex)
@@ -142,6 +145,7 @@
   #:use-module (gnu packages openkinect)
   #:use-module (gnu packages parallel)
   #:use-module (gnu packages pcre)
+  #:use-module (gnu packages pdf)
   #:use-module (gnu packages perl)
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages pretty-print)
@@ -158,7 +162,7 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
   #:use-module (gnu packages readline)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
   #:use-module (gnu packages sagemath)
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages sqlite)
@@ -1274,7 +1278,7 @@ Emacs).")
 (define-public kicad
   (package
     (name "kicad")
-    (version "9.0.0")
+    (version "9.0.2")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1282,7 +1286,7 @@ Emacs).")
                     (commit version)))
               (sha256
                (base32
-                "0rr4k5hx4kjbfi4q3jdhamv1gjb0b1nwmmrrdg7ig18335bpw14s"))
+                "1v3nvp5ifa36hx3iw3whlp3j7hiy91fzihc0jc1daw0hnps7qy24"))
               (file-name (git-file-name name version))))
     (build-system cmake-build-system)
     (arguments
@@ -1338,7 +1342,10 @@ Emacs).")
             (files '("share/kicad/footprints")))
            (search-path-specification
             (variable "KICAD9_3DMODEL_DIR")
-            (files '("share/kicad/3dmodels")))))
+            (files '("share/kicad/3dmodels")))
+           (search-path-specification
+            (variable "KICAD_STOCK_DATA_HOME")
+            (files '("share/kicad")))))
     (native-inputs (list boost
                          desktop-file-utils
                          gettext-minimal
@@ -1388,7 +1395,7 @@ electrical diagrams), gerbview (viewing Gerber files) and others.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0xxys0ld2irzvfr6slh8xfcv4kmsnqnfxf4cwc9nwinljcwi20gi"))))
+                "0jhn4hq78cz07hsbyfyzy93gck88j04im1pmsl3sx87g2s215qzd"))))
     (build-system cmake-build-system)
     (arguments
      `(#:configure-flags (list "-DBUILD_FORMATS=html")
@@ -1403,7 +1410,7 @@ electrical diagrams), gerbview (viewing Gerber files) and others.")
                          perl-unicode-linebreak
                          perl-yaml-tiny
                          po4a
-                         ruby-asciidoctor
+                         ruby-asciidoctor/minimal
                          source-highlight))
     (home-page "https://kicad.org")
     (synopsis "KiCad official documentation")
@@ -1422,7 +1429,7 @@ electrical diagrams), gerbview (viewing Gerber files) and others.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0l8da2ix917jlsj6v5zclc1cb5pvjaxwmys0gjdv55ic31hhfyyw"))))
+                "134x4d5w89aahl4k9zai6vwcazibz17gsgzy04l9xn4zcf6v11qp"))))
     (build-system cmake-build-system)
     (arguments
      `(#:tests? #f))                    ; no tests exist
@@ -1451,7 +1458,7 @@ libraries.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "16zslgvjg4swgkkvnd9fmiks3wzg63364d03hixiyzcpjlgk2bbk"))))
+                "0w44b7dzx6d3xw2vbw37k34zxy25bq46rsnv21x10227313vr2wm"))))
     (synopsis "Official KiCad footprint libraries")
     (description "This package contains the official KiCad footprint libraries.")))
 
@@ -1468,7 +1475,7 @@ libraries.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0bg54lg1iw01gw06ajg34y7x4y36wm6ls3jnpjy13i18d4ik77g4"))))
+                "18cxlp5grvv5m63c3sb6m9l9cmijqqcjmxrkdzg63d5jp7w73smn"))))
     (synopsis "Official KiCad 3D model libraries")
     (description "This package contains the official KiCad 3D model libraries.")))
 
@@ -1523,6 +1530,57 @@ alternative to atomic operations for critical fast paths and are usually used
 in the context of per-cpu data.  The library offers ABI headers to interface
 with the kernel and various utilities such as per-cpu counters.")
       (license (list license:lgpl2.1 license:expat)))))
+
+(define-public horizon-eda
+  (package
+    (name "horizon-eda")
+    (version "2.7.0")
+    ;; TODO: try to unbundle some of the 3rd parties.
+    ;; We have packages for nlohmann-json, range-v3, catch2 and clipper.
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/horizon-eda/horizon")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1sq1d2x9wq168cz91l2rd93gnlq5scknb45bi1njqqcw3jjjhsk3"))))
+    (build-system meson-build-system)
+    (arguments
+     (list
+      #:tests? #f ; no tests
+      #:glib-or-gtk? #t))
+    (native-inputs (list cmake-minimal ;; OpenCASCADE is only found by cmake
+                         `(,glib "bin")
+                         gobject-introspection
+                         pkg-config))
+    (inputs (list boost
+                  cairomm
+                  cppzmq
+                  curl
+                  glib
+                  glibmm
+                  glm
+                  gsettings-desktop-schemas
+                  gtk+
+                  gtkmm-3
+                  libarchive
+                  libgit2-glib
+                  librsvg
+                  libspnav
+                  libzip
+                  opencascade-occt
+                  podofo
+                  sqlite
+                  `(,util-linux "lib")
+                  zeromq))
+    (home-page "https://horizon-eda.org/")
+    (synopsis "Electronic Design Automation package")
+    (description "Horizon EDA is an Electronic Design Automation package
+supporting an integrated end-to-end workflow for printed circuit board design
+including parts management and schematic entry.")
+    (license license:gpl3+)))
 
 (define-public linsmith
   (package
@@ -1892,7 +1950,7 @@ fully-vectorial and three-dimensional methods.")
 (define-public meep
   (package
     (name "meep")
-    (version "1.30.0")
+    (version "1.30.1")
     (source (origin
               (method url-fetch)
               (uri
@@ -1901,7 +1959,7 @@ fully-vectorial and three-dimensional methods.")
                 version "/meep-" version ".tar.gz"))
               (sha256
                (base32
-                "0fgbyg0b1g172ndi5cmmawd7j602g00hfr8waqjw3fa4s3zxgq09"))))
+                "1h80d7i7v06fxfdsa496b542dvr105c4v1n7pk8m3jssvbxvv2a0"))))
     (build-system gnu-build-system)
     (arguments
      (list #:configure-flags
@@ -1922,7 +1980,7 @@ fully-vectorial and three-dimensional methods.")
            mpb
            openblas
            zlib))
-    (home-page "http://ab-initio.mit.edu/wiki/index.php/Meep")
+    (home-page "https://meep.readthedocs.io/en/latest/")
     (synopsis "Finite-difference time-domain (FDTD) simulation software")
     (description
      "Meep is a finite-difference time-domain (FDTD) simulation software package
@@ -2924,32 +2982,35 @@ specification can be downloaded at @url{http://3mf.io/specification/}.")
     (license license:bsd-2)))
 
 (define-public manifold
-  (package
-    (name "manifold")
-    (version "3.0.1")
-    (source
-     (origin
-       (method git-fetch)
-       (uri (git-reference
-             (url "https://github.com/elalish/manifold")
-             (commit (string-append "v" version))))
-       (file-name (git-file-name name version))
-       (sha256
-        (base32 "1f0k8937gk7b9100k99pmz1f17nzczpdk7797p2aijla0z29ddy1"))))
-    (build-system cmake-build-system)
-    (inputs (list tbb clipper2 assimp python-nanobind googletest))
-    (arguments
-     ;; can be removed when emscripten is packaged
-     `(#:configure-flags '("-DMANIFOLD_JSBIND=OFF")))
-    (synopsis "Geometry library for topological robustness")
-    (description
-     "Manifold is a geometry library dedicated to creating and operating on
+  (let ((commit "7c8fbe186aa1ac5eb73f12c28bdef093ee4d11c9")
+        (version "3.0.1")
+        (revision "0"))
+    (package
+      (name "manifold")
+      (version (git-version version revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/elalish/manifold")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "09s4r4hlarl5lzbbihfd1fpfd3987lma5m26wkkvi7zssdbis9zc"))))
+      (build-system cmake-build-system)
+      (inputs (list tbb clipper2 assimp python-nanobind googletest))
+      (arguments
+       ;; can be removed once emscripten is packaged
+       `(#:configure-flags '("-DMANIFOLD_JSBIND=OFF")))
+      (synopsis "Geometry library for topological robustness")
+      (description
+       "Manifold is a geometry library dedicated to creating and operating on
 manifold triangle meshes.  A manifold mesh is a mesh that represents a solid
 object, and so is very important in manufacturing, CAD, structural analysis,
 etc..  Manifold also supports arbitrary vertex properties and enables mapping
 of materials for rendering use-cases.")
-    (home-page "https://github.com/elalish/manifold")
-    (license license:asl2.0)))
+      (home-page "https://github.com/elalish/manifold")
+      (license license:asl2.0))))
 
 (define-public python-keithley2600
   (package
@@ -3118,7 +3179,7 @@ Newton-Raphson power flow solvers in the C++ library lightsim2grid, and the
 (define-public python-scikit-rf
   (package
     (name "python-scikit-rf")
-    (version "1.6.2")
+    (version "1.7.0")
     (source (origin
               (method git-fetch) ;PyPI misses some files required for tests
               (uri (git-reference
@@ -3126,7 +3187,7 @@ Newton-Raphson power flow solvers in the C++ library lightsim2grid, and the
                     (commit (string-append "v" version))))
               (sha256
                (base32
-                "0s339mw231jgml6wdi6zmvy93x58pv6fmk6xmpjpymdr4g36kk86"))
+                "148bfdbh0y69f5xhxb49jqvc6gabk0n4i0fl1j5f3fnm9vaypyis"))
               (file-name (git-file-name name version))))
     (build-system pyproject-build-system)
     (propagated-inputs (list python-numpy
@@ -3186,8 +3247,8 @@ ontinuous-time and discret-time expressions.")
     (license license:lgpl2.1+)))
 
 (define-public openscad
-  (let ((commit "72c9919d63116f8e711f3566ae34e9eb63a2d6e6")
-        (version "2025.05.08")
+  (let ((commit "7245089d3226de41ab55faee62ffe326f6efcb69")
+        (version "2025.06.01")
         (revision "0"))
     (package
       (name "openscad")
@@ -3198,23 +3259,27 @@ ontinuous-time and discret-time expressions.")
          (uri (git-reference
                (url "https://github.com/openscad/openscad")
                (commit commit)
+               ;; Needed for libraries/MCAD, a library specific to OpenSCAD
+               ;; which is included as a submodule. All other libraries are
+               ;; deleted in the patch-source build phase.
                (recursive? #t)))
          (sha256
-          (base32 "077x7s3z65mz6rnrzan3qn06045d2fkqnd6ss6ibw1fhlaypzfbf"))
+          (base32 "0lynjxa5y9wi443vxgaj2r8lr98dyfxinq7n4gcw9gz7cfc52a4a"))
+         (patches (search-patches
+                   "openscad-fix-path-in-expected-test-results-to-acommodate-diff.patch"))
          (file-name (git-file-name name version))))
       (build-system qt-build-system)
       (arguments
        (list
         #:configure-flags
         #~(list "-DCMAKE_BUILD_TYPE=Release"
-                "-DUSE_BUILTIN_OPENCSG=ON"
+                "-DUSE_BUILTIN_CLIPPER2=OFF"
+                "-DUSE_BUILTIN_MANIFOLD=OFF"
+                "-DUSE_BUILTIN_OPENCSG=OFF"
                 "-DMANIFOLD_PYBIND=OFF"
                 "-DMANIFOLD_TEST=OFF"
-                "-DENABLE_TESTS=OFF"
                 "-DEXPERIMENTAL=ON"
-                "-DSNAPSHOT=ON"
                 "-DENABLE_PYTHON=ON"
-                "-DUSE_BUILTIN_CLIPPER2=OFF"
                 (string-append "-DOPENSCAD_VERSION="
                                #$version)
                 (string-append "-DOPENSCAD_COMMIT="
@@ -3223,27 +3288,47 @@ ontinuous-time and discret-time expressions.")
                 "-DENABLE_GLX=ON")
         #:phases
         #~(modify-phases %standard-phases
-            (delete 'check)
             (add-after 'unpack 'patch-source
               (lambda* (#:key inputs #:allow-other-keys)
-                ;; <https://github.com/openscad/openscad/issues/5877>
+                ;; Delete all unbundled libraries to replace them with guix
+                ;; packages.
+                (delete-file-recursively "submodules")
+                ;; Fix: Dependency lib3mf is not found due to using a wrong
+                ;; variable name in the CMake config (see
+                ;; https://github.com/openscad/openscad/issues/5877).
                 (substitute* "cmake/Modules/FindLib3MF.cmake"
                   (("PC_LIB3MF_INCLUDE_DIRS")
                    "PC_LIB3MF_INCLUDEDIR"))
                 (substitute* "CMakeLists.txt"
-                  ;; <https://github.com/openscad/openscad/issues/5880>
+                  ;; Remove bundled libraries from cmake.
+                  (("add_subdirectory\\(submodules\\)")
+                   "")
+                  ;; Fix detection of EGL (see
+                  ;; https://github.com/openscad/openscad/issues/5880).
                   (("target_link_libraries\\(OpenSCAD PRIVATE OpenGL::EGL\\)")
-                   "      find_package(ECM REQUIRED NO_MODULE)
+                   "find_package(ECM REQUIRED NO_MODULE)
       list(APPEND CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
       find_package(EGL REQUIRED)
       target_link_libraries(OpenSCAD PRIVATE EGL::EGL)")
-                  ;; <https://github.com/openscad/openscad/issues/5897>
-                  (("find_package\\(Nettle 3.4\\)")
-                   "find_package(Nettle 3.4 REQUIRED)")
                   ;; Use the system sanitizers-cmake module.
                   (("\\$\\{CMAKE_SOURCE_DIR\\}/submodules/sanitizers-cmake/cmake")
                    (string-append (assoc-ref inputs "sanitizers-cmake")
-                                  "/share/sanitizers-cmake/cmake"))))))))
+                                  "/share/sanitizers-cmake/cmake")))
+                ;; Fix test-tool expecting build directory to be a direct
+                ;; subdirectory of the source directory (see
+                ;; https://github.com/openscad/openscad/issues/5937).
+                (substitute* "tests/test_cmdline_tool.py"
+                  (("build_to_test_sources = \"../../tests\"")
+                   "build_to_test_sources = \"../../source/tests\""))))
+            (add-before 'check 'patch-tests
+              (lambda _
+                ;; Fix tests expecting build directory to be a direct descendant
+                ;; of the source dir (see
+                ;; https://github.com/openscad/openscad/issues/5938).
+                (copy-recursively "../source/color-schemes" "./color-schemes")
+                (copy-recursively "../source/shaders" "./shaders")
+                ;; Required for fontconfig
+                (setenv "HOME" "/tmp"))))))
       (inputs (list boost
                     cairomm
                     cgal
@@ -3264,7 +3349,7 @@ ontinuous-time and discret-time expressions.")
                     libxml2
                     libzip
                     manifold
-                    mesa ; or libglvnd if we had mesa-glvnd, too
+                    mesa
                     mimalloc
                     mpfr
                     nettle
@@ -3272,9 +3357,9 @@ ontinuous-time and discret-time expressions.")
                     python
                     python-numpy
                     python-pillow
-                    python-pip
                     qscintilla
                     qtbase-5
+                    qtgamepad
                     qtmultimedia-5
                     qtsvg-5
                     qtwayland-5
@@ -3406,7 +3491,7 @@ dynamics is used by FreeCAD 1.0.0 for its new Assembly workbench.")
 (define-public freecad
   (package
     (name "freecad")
-    (version "1.0.0")
+    (version "1.0.1")
     (source
      (origin
        (method git-fetch)
@@ -3415,7 +3500,7 @@ dynamics is used by FreeCAD 1.0.0 for its new Assembly workbench.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0wwymcfgi0cybj7m6awflk8c7n6iy97lpgpfhfncx3zwvjrxv588"))
+        (base32 "0p3pa4w1xj7sgqk9vxdri8l3hbx0a8iz2pwn8gwjqlhc62z4hrg8"))
        (modules '((guix build utils)))
        (snippet
         '(begin
@@ -3429,9 +3514,8 @@ dynamics is used by FreeCAD 1.0.0 for its new Assembly workbench.")
      (list c++-gsl
            doxygen
            graphviz
-           qttools-5
+           qttools
            pkg-config
-           python-pyside-2-tools
            swig))
     (inputs
      (list bash-minimal
@@ -3465,16 +3549,16 @@ dynamics is used by FreeCAD 1.0.0 for its new Assembly workbench.")
            python-matplotlib
            python-pivy
            python-ply
-           python-pyside-2
+           python-pyside-6
            python-pyyaml
-           python-shiboken-2
+           python-shiboken-6
            python-wrapper
-           qtbase-5
-           qtdeclarative-5
-           qtsvg-5
-           qtwebchannel-5
-           qtwebengine-5
-           qtwayland-5
+           qtbase
+           qtdeclarative
+           qtsvg
+           qtwebchannel
+           qtwebengine
+           qtwayland
            qtx11extras
            qtxmlpatterns
            sqlite
@@ -3487,10 +3571,10 @@ dynamics is used by FreeCAD 1.0.0 for its new Assembly workbench.")
      `(#:tests? #f  ;; Project has tests, but they are a pain to build
        #:configure-flags
        ,#~(list
-           "-DBUILD_QT5=ON"
            "-DBUILD_FLAT_MESH:BOOL=ON"
            "-DBUILD_ENABLE_CXX_STD:STRING=C++17"
            "-DENABLE_DEVELOPER_TESTS=OFF"  ;; see the above: #:tests? comment
+           "-DFREECAD_QT_VERSION=6"  ;; Build with Qt6
            "-DFREECAD_USE_EXTERNAL_ONDSELSOLVER=ON"  ;; unbundle ondsel-solver
            ;; Do not try to install modules into system python
            "-DINSTALL_TO_SITEPACKAGES=OFF"
@@ -3507,7 +3591,7 @@ dynamics is used by FreeCAD 1.0.0 for its new Assembly workbench.")
                (wrap-program (string-append out "/bin/FreeCAD")
                  (list "GUIX_PYTHONPATH"
                        'prefix (list (getenv "GUIX_PYTHONPATH"))))))))))
-    (home-page "https://www.freecadweb.org/")
+    (home-page "https://www.freecad.org/")
     (synopsis "Your Own 3D Parametric Modeler")
     (description
      "FreeCAD is a general-purpose, feature-based, parametric 3D modeler for
@@ -3669,20 +3753,23 @@ operations.")
 (define-public libspnav
   (package
     (name "libspnav")
-    (version "0.2.3")
+    (version "1.2")
     (source (origin
               (method git-fetch)
               (uri (git-reference
                     (url "https://github.com/FreeSpacenav/libspnav")
-                    (commit (string-append "libspnav-" version))))
+                    (commit (string-append "v" version))))
               (sha256
                (base32
-                "098h1jhlj87axpza5zgy58prp0zn94wyrbch6x0s7q4mzh7dc8ba"))
+                "12z548jsyxcgyhh9gazw032n3igw6g15y07h4c1nlk2cd8gv6i70"))
               (file-name (git-file-name name version))))
     (build-system gnu-build-system)
     (inputs
      (list libx11))
-    (arguments `(#:tests? #f))
+    (arguments
+     (list
+      #:tests? #f ; there are no tests
+      #:make-flags #~(list (string-append "CC=" #$(cc-for-target)))))
     (home-page "https://spacenav.sourceforge.net/")
     (synopsis
      "Library for communicating with spacenavd or 3dxsrv")
@@ -5466,3 +5553,94 @@ and mogan.")
 towards field theory.")
     (home-page "https://cadabra.science/")
     (license license:gpl3+)))
+
+(define-public orocos-kinematics-dynamics
+  (let ((commit "34ecff4ca7bae52fa16ca13fdb3d9db26fd2a293")
+        ;; There hasn't been a new release in many years (version 1.5.1)
+        ;; Using the latest commit (which has internally set version to 1.5.2)
+        (revision "0"))
+    (package
+      (name "orocos-kinematics-dynamics")
+      (version (git-version "1.5.2" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/orocos/orocos_kinematics_dynamics")
+               (commit commit)))
+         (sha256
+          (base32 "1c7vimy065908qs5nwhnrk9pp0wh8pjgdvz2hwb12a9wcsj50kf0"))
+         (file-name (git-file-name name version))
+         (modules '((guix build utils)))
+         ;; make tests deterministic by seeding the random number generator
+         (snippet '(substitute* '("orocos_kdl/tests/treeinvdyntest.cpp"
+                                  "orocos_kdl/tests/solvertest.cpp")
+                     (("srand\\( \\(unsigned\\)time\\( NULL \\)\\)")
+                      "srand(0u)")))))
+      (build-system cmake-build-system)
+      (native-inputs (list cppunit))
+      (propagated-inputs (list eigen))
+      (arguments
+       (list
+        #:configure-flags
+        #~(list "-DENABLE_TESTS=ON")
+        #:test-target "check"
+        #:phases
+        #~(modify-phases %standard-phases
+            (add-after 'unpack 'chdir
+              (lambda _
+                (chdir "orocos_kdl"))))))
+      (home-page "https://docs.orocos.org/kdl/overview.html")
+      (synopsis "Orocos Kinematics and Dynamics (KDL) C++ Library")
+      (description
+       "A C++ library for rigid body kinematics calculations
+and representations for kinematic structures and their inverse and
+forward kinematics solvers.")
+      (license license:lgpl2.1+))))
+
+(define-public python-orocos-kinematics-dynamics
+  (package
+    (inherit orocos-kinematics-dynamics)
+    (name "python-orocos-kinematics-dynamics")
+    (source
+     (origin
+       (inherit (package-source orocos-kinematics-dynamics))
+       (snippet '(begin
+                   (substitute* "python_orocos_kdl/CMakeLists.txt"
+                     ;; Use the system pybind11 instead of the bundled version
+                     (("add_subdirectory\\(pybind11\\)")
+                      "find_package(pybind11)")
+                     ;; change debian-specific python install directory
+                     (("dist-packages")
+                      "site-packages"))
+                   ;; ROS 1 uses some dynamic attributes, which are
+                   ;; disabled by default in pybind11. No harm in enabling them
+                   ;; See "https://github.com/ros2/geometry2/issues/624
+                   ;; and https://pybind11.readthedocs.io/en/stable/classes.html
+                   ;; #dynamic-attributes <Both accessed June 1 2025>
+                   (substitute* "python_orocos_kdl/PyKDL/frames.cpp"
+                     (("m, \"Vector\"")
+                      "m, \"Vector\", py::dynamic_attr()")
+                     (("m, \"Frame\"")
+                      "m, \"Frame\", py::dynamic_attr()")
+                     (("m, \"Twist\"")
+                      "m, \"Twist\", py::dynamic_attr()")
+                     (("m, \"Wrench\"")
+                      "m, \"Wrench\", py::dynamic_attr()"))))))
+    (native-inputs (list python pybind11 python-psutil))
+    (inputs (list orocos-kinematics-dynamics))
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'chdir
+            (lambda _
+              (chdir "python_orocos_kdl")))
+          (replace 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              (setenv "PYTHONPATH" "./")
+              (when tests?
+                (invoke "python3"
+                        "../python_orocos_kdl/tests/PyKDLtest.py")))))))
+    (synopsis "Python bindings for orocos-kinematics-dynamics")
+    (description "Python bindings for orocos-kinematics-dynamics.")))

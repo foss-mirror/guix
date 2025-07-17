@@ -70,7 +70,7 @@
 (define-public crun
   (package
     (name "crun")
-    (version "1.21")
+    (version "1.22")
     (source
      (origin
        (method url-fetch)
@@ -80,7 +80,7 @@
              "/crun-" version ".tar.gz"))
        (sha256
         (base32
-         "11n42h4sx02xyrnkaq3d6l2i0fac7xshgkryvsj08j2afq771ysb"))))
+         "1cggwb5libxjx4x96hd2v1pd4rm7m7bll37j888khsc5s486q32z"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -391,7 +391,7 @@ configure network interfaces in Linux containers.")
 (define-public gvisor-tap-vsock
   (package
     (name "gvisor-tap-vsock")
-    (version "0.7.3")
+    (version "0.8.6")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -400,7 +400,7 @@ configure network interfaces in Linux containers.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1q1zism0c63k2aq6yhkjqc3b2zsm4lwn0bk39p2kl79h798wfyp4"))))
+                "18pwpw3dap42mpv5a1ciq6fh0y8ya5ix7r38bi8i1xc7dxcy3jdj"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -422,11 +422,19 @@ configure network interfaces in Linux containers.")
           (add-before 'check 'prune-tests
             (lambda _
               ;; Requires internet connection to fetch QEMU image.
-              (invoke "rm" "-r" "test")))
+              (invoke "rm" "-r" "test-qemu")
+              ;; Requires working DNS.
+              (substitute* "pkg/services/dns/dns_test.go"
+                (("Should pass DNS requests to default system DNS.*" all)
+                 (string-append all "\n" "ginkgo.Skip(\"No network.\");"))
+                (("\"redhat.com\",")
+                 "\"localhost\",")
+                (("\"52.200.142.250\"")
+                 "\"127.0.0.1\""))))
           (replace 'install
             (lambda _
               (install-file "bin/gvproxy" (string-append #$output "/bin")))))))
-    (native-inputs (list go-1.20))
+    (native-inputs (list go-1.23))
     (home-page "https://github.com/containers/gvisor-tap-vsock")
     (synopsis "Network stack for virtualization based on gVisor")
     (description "This package provides a replacement for @code{libslirp} and
@@ -470,7 +478,7 @@ Its main purpose is to support the key usage by @code{docker-init}:
 (define-public podman
   (package
     (name "podman")
-    (version "5.4.2")
+    (version "5.5.2")
     (outputs '("out" "docker"))
     (properties
       `((output-synopsis "docker" "docker alias for podman")))
@@ -481,7 +489,7 @@ Its main purpose is to support the key usage by @code{docker-init}:
              (url "https://github.com/containers/podman")
              (commit (string-append "v" version))))
        (sha256
-        (base32 "1yjkyn1wrpzfcndds23p0r192l95rq4jcw7w9m2y1zdhafjlgr5y"))
+        (base32 "0smdfyhyx1j78anvlwhbmimsrwm4fzf858yh83g37ykg5m04kfl8"))
        (file-name (git-file-name name version))))
     (build-system gnu-build-system)
     (arguments
@@ -570,13 +578,12 @@ Its main purpose is to support the key usage by @code{docker-init}:
            libseccomp
            libselinux))
     (native-inputs
-     (list (package/inherit grep
-             (inputs (list pcre2)))     ; Drop once grep on master supports -P
+     (list grep
            bats
            git-minimal/pinned
-           go-1.22
+           go-1.23
            go-md2man
-           gnu-gettext ; for envsubst
+           gettext-minimal ; for envsubst
            mandoc
            pkg-config
            python))
@@ -627,7 +634,7 @@ being rootless and not requiring any daemon to be running.")
 (define-public buildah
   (package
     (name "buildah")
-    (version "1.40.0")
+    (version "1.40.1")
     (source
      (origin
        (method git-fetch)
@@ -635,7 +642,7 @@ being rootless and not requiring any daemon to be running.")
              (url "https://github.com/containers/buildah")
              (commit (string-append "v" version))))
        (sha256
-        (base32 "0k2fdz2cqz0zj6cih32saa1wl7rcf6hqnpf0afmxgy68pinzq2g2"))
+        (base32 "109xvnx65gbajxipq2h0669bzzxyc6hfmdcijgngijxj5kwx5cgq"))
        (file-name (git-file-name name version))))
     (build-system gnu-build-system)
     (arguments

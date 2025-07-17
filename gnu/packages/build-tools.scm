@@ -13,7 +13,7 @@
 ;;; Copyright © 2020 Jakub Kądziołka <kuba@kadziolka.net>
 ;;; Copyright © 2020, 2023 Efraim Flashner <efraim@flashner.co.il>
 ;;; Copyright © 2021 qblade <qblade@protonmail.com>
-;;; Copyright © 2021, 2023, 2024 Maxim Cournoyer <maxim.cournoyer@gmail.com>
+;;; Copyright © 2021, 2023, 2024, 2025 Maxim Cournoyer <maxim.cournoyer@gmail.com>
 ;;; Copyright © 2022, 2023 Juliana Sims <juli@incana.org>
 ;;; Copyright © 2024 Evgeny Pisemsky <mail@pisemsky.site>
 ;;;
@@ -38,12 +38,15 @@
   #:use-module (guix utils)
   #:use-module (guix packages)
   #:use-module (guix gexp)
+  #:use-module (guix deprecation)
   #:use-module (guix download)
   #:use-module (guix git-download)
   #:use-module (guix build-system cmake)
   #:use-module (guix build-system copy)
   #:use-module (guix build-system guile)
+  #:use-module (guix build-system trivial)
   #:use-module (guix modules)
+  #:use-module (guix search-paths)
   #:use-module (gnu packages)
   #:use-module (gnu packages adns)
   #:use-module (gnu packages autotools)
@@ -82,6 +85,7 @@
   #:use-module (gnu packages version-control)
   #:use-module (gnu packages xml)
   #:use-module (guix build-system gnu)
+  #:use-module (guix build-system meson)
   #:use-module (guix build-system pyproject)
   #:use-module (guix build-system python))
 
@@ -374,6 +378,76 @@ resembles Python.")
     (description "Meson-python is a PEP 517 build backend for Meson projects.")
     (license license:expat)))
 
+(define-public muon
+  ;; Use the latest commit, as there hasn't yet been a new release including
+  ;; recent changes (see: https://github.com/muon-build/muon/issues/146).
+  (let ((commit "55b7285a92779bd8b8870482e5535ce878f3e09f")
+        (revision "0"))
+    (package
+      (name "muon")
+      (version (git-version "0.4.0" revision commit))
+      (source (origin
+                (method git-fetch)
+                (uri (git-reference
+                      (url "https://github.com/muon-build/muon")
+                      (commit commit)))
+                (file-name (git-file-name name version))
+                (sha256
+                 (base32
+                  "0kpk1h82djb0brxkwy5ylpvdpp2l1489bq822dmryhmsd573ii48"))))
+      (build-system meson-build-system)
+      (arguments
+       (list #:meson (computed-file "null-package" #~(mkdir #$output))
+             #:ninja samu-as-ninja-wrapper
+             #:configure-flags #~(list "-Dsamurai=disabled")
+             #:tests? #f                  ;to avoid extra dependencies
+             #:phases
+             #~(modify-phases %standard-phases
+                 (add-after 'unpack 'patch-/bin/sh
+                   (lambda* (#:key inputs #:allow-other-keys)
+                     (substitute* "tools/generate_test_check_script.py"
+                       (("#!/bin/sh")
+                        (string-append "#!" (search-input-file inputs
+                                                               "bin/sh"))))))
+                 (add-after 'patch-source-shebangs 'build-muon-bootstrap
+                   (lambda _
+                     (setenv "CC" #$(cc-for-target))
+                     (setenv "CFLAGS" "-DBOOTSTRAP_NO_SAMU")
+                     (invoke "./bootstrap.sh" "build")))
+                 (add-after 'build-muon-bootstrap 'setup-muon-bootstrap-as-meson
+                   (lambda _
+                     (mkdir "bin")
+                     (symlink "../build/muon-bootstrap" "bin/meson")
+                     (setenv  "PATH" (string-append (getcwd) "/bin:"
+                                                    (getenv "PATH"))))))))
+      (native-inputs (list samurai))
+      (inputs (list bash-minimal pkgconf))
+      (native-search-paths (list $PKG_CONFIG_PATH))
+      (home-page "https://muon.build/")
+      (synopsis "Meson build system alternative implementation in C99")
+      (description "Muon is an implementation of the meson build system in c99
+with minimal dependencies.")
+      (license license:gpl3))))            ;for the combined work
+
+(define-public muon-as-meson-wrapper
+  (package/inherit muon
+    (name "muon-as-meson-wrapper")
+    (build-system trivial-build-system)
+    (arguments
+     (list #:builder
+           (with-imported-modules '((guix build utils))
+             #~(begin
+                 (use-modules (guix build utils))
+                 (let ((bindir (string-append #$output "/bin"))
+                       (samu (string-append #$(this-package-input "muon")
+                                            "/bin/muon")))
+                   (mkdir-p bindir)
+                   (symlink samu (string-append bindir "/meson")))))))
+    (inputs (list muon))
+    (description "This package provides the @command{meson} command,
+implemented as a symbolic link to the @command{muon} command of @code{muon}
+package.")))
+
 (define-public premake4
   (package
     (name "premake")
@@ -449,13 +523,13 @@ other lower-level build files.")))
               (sha256
                (base32
                 "1h9653965bqf8zab4gbsilsmnhp6nxn5b5b9yvm6pf401qjx8n4x"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
     (arguments
      (list
-      #:modules (append %python-build-system-modules
+      #:modules (append %pyproject-build-system-modules
                         '((ice-9 ftw) (srfi srfi-26)))
       #:phases
-      #~(modify-phases (@ (guix build python-build-system) %standard-phases)
+      #~(modify-phases (@ (guix build pyproject-build-system) %standard-phases)
           (add-after 'unpack 'adjust-hard-coded-paths
             (lambda _
               (substitute* "SCons/Script/Main.py"
@@ -498,35 +572,29 @@ software.")
 (define-public scons-3
   (package
     (inherit scons)
-    (version "3.0.4")
-    (source (origin
-             (method git-fetch)
-             (uri (git-reference
-                   (url "https://github.com/SCons/scons")
-                   (commit version)))
-             (file-name (git-file-name "scons" version))
-             (sha256
-              (base32
-               "1xy8jrwz87y589ihcld4hv7wn122sjbz914xn8h50ww77wbhk8hn"))))
+    (version "3.1.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/SCons/scons")
+             (commit version)))
+       (file-name (git-file-name "scons" version))
+       (sha256
+        (base32 "0q6xq2y280fci3kay1z6638v7sv5p43vs7lsl1rrkgmxpwvkhx8b"))))
     (arguments
-     `(#:use-setuptools? #f                ; still relies on distutils
-       #:tests? #f                         ; no 'python setup.py test' command
-       #:phases
-       (modify-phases %standard-phases
-         (add-before 'build 'bootstrap
-           (lambda _
-             (substitute* "src/engine/SCons/compat/__init__.py"
-               (("sys.modules\\[new\\] = imp.load_module\\(old, \\*imp.find_module\\(old\\)\\)")
-                "sys.modules[new] = __import__(old)"))
-             (substitute* "src/engine/SCons/Platform/__init__.py"
-               (("mod = imp.load_module\\(full_name, file, path, desc\\)")
-                "mod = __import__(full_name)"))
-             (invoke "python" "bootstrap.py" "build/scons" "DEVELOPER=guix")
-             (chdir "build/scons")
-             #t)))))
-    (native-inputs '())))
+     (list
+      #:tests? #f                         ; no 'python setup.py test' command
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'build 'bootstrap
+            (lambda _
+              (invoke "python" "bootstrap.py" "build/scons" "DEVELOPER=guix")
+              (chdir "build/scons"))))))
+    (native-inputs (list python-setuptools python-wheel))))
 
-(define-public scons-python2
+;; TODO Remove on the next python-team iteration.
+(define-deprecated/public scons-python2 scons
   (package
     (inherit (package-with-python2 scons-3))
     (name "scons-python2")))
@@ -534,65 +602,79 @@ software.")
 (define-public tup
   (package
     (name "tup")
-    (version "0.7.11")
+    (version "0.8")
     (source (origin
               (method url-fetch)
-              (uri (string-append "http://gittup.org/tup/releases/tup-v"
+              (uri (string-append "https://gittup.org/tup/releases/tup-v"
                                   version ".tar.gz"))
               (sha256
                (base32
-                "1157qfnhjakm3h07y7h38lrjw5650gkif34k30bnrsypmwl5xyzb"))
-              (patches (search-patches "tup-unbundle-dependencies.patch"))
+                "1yv60apd8dsigb74cjw1nzvqqqpjbsxz1i9dhq24jdkjwgsra3w4"))
               (modules '((guix build utils)))
               (snippet
                '(begin
                   ;; NOTE: Tup uses a slightly modified Lua, so it cannot be
-                  ;; unbundled.  See: src/lula/tup-lua.patch
+                  ;; unbundled.  See: src/lua/tup-lua.patch
                   (delete-file-recursively "src/pcre")
                   (delete-file-recursively "src/sqlite3")
-                  #t))))
+                  (delete-file-recursively "src/inih")
+                  ;; ldpreload Used only on BSD.  Deleting to avoid putting
+                  ;; license:bsd-2 in the licenses field
+                  (delete-file-recursively "src/ldpreload")))))
     (build-system gnu-build-system)
     (arguments
-     `(#:phases
-       (modify-phases %standard-phases
-         ;; There is a bootstrap script, but it doesn't do what you think - it
-         ;; builds tup.
-         (delete 'bootstrap)
-         (replace 'configure
-           (lambda _
-             (substitute* "src/tup/link.sh"
-               (("`git describe`") ,version))
-             (with-output-to-file "tup.config"
-               (lambda _
-                 (format #t "CONFIG_TUP_USE_SYSTEM_SQLITE=y~%")))
-             #t))
-         (delete 'check)
-         (replace 'build
-           (lambda _
-             ;; Based on bootstrap-nofuse.sh, but with a detour to patch-shebang.
-             (invoke "./build.sh")
-             (invoke "./build/tup" "init")
-             (invoke "./build/tup" "generate" "--verbose" "build-nofuse.sh")
-             (patch-shebang "build-nofuse.sh")
-             (invoke "./build-nofuse.sh")))
-         (replace 'install
-           (lambda* (#:key outputs #:allow-other-keys)
-             (let* ((outdir (assoc-ref outputs "out"))
-                    (ftdetect (string-append outdir
-                                             "/share/vim/vimfiles/ftdetect")))
-               (install-file "tup" (string-append outdir "/bin"))
-               (install-file "tup.1" (string-append outdir "/share/man/man1"))
-               (install-file "contrib/syntax/tup.vim"
-                             (string-append outdir "/share/vim/vimfiles/syntax"))
-               (mkdir-p ftdetect)
-               (with-output-to-file (string-append ftdetect "/tup.vim")
-                 (lambda _
-                   (display "au BufNewFile,BufRead Tupfile,*.tup setf tup")))
-               #t))))))
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; There is a bootstrap script, but it doesn't do what you think - it
+          ;; builds tup.
+          (delete 'bootstrap)
+          (replace 'configure
+            (lambda* (#:key inputs #:allow-other-keys)
+              (substitute* "build.sh"
+                ;; LDFLAGS
+                (("-lm") "-lm -lsqlite3 -linih `pcre2-config --libs8`")
+                ;; CFLAGS
+                (("-DHAVE_CONFIG_H") "-DHAVE_CONFIG_H `pcre2-config --cflags`")
+                ;; Don't build bundled inih and pcre
+                (("\\.\\./src/inih/ini\\.c \\.\\./src/pcre/\\*\\.c") "")
+                ;; Don't build bundled sqlite3
+                (("\\$CC \\$CFLAGS -c \\.\\./src/sqlite3/sqlite3\\.c.*") ""))
+              (substitute* "src/tup/option.c"
+                (("\"ini.h\"") "<ini.h>"))
+              (substitute* '("src/tup/tupid.h"
+                             "src/tup/db.c")
+                (("sqlite3/sqlite3.h")
+                 (search-input-file inputs "include/sqlite3.h")))
+              (with-output-to-file "tup.config"
+                (lambda _
+                  (format #t (string-append "CONFIG_TUP_USE_SYSTEM_SQLITE=y~%"
+                                            "CONFIG_TUP_USE_SYSTEM_PCRE=y~%"
+                                            "CONFIG_TUP_USE_SYSTEM_INIH=y~%"))))))
+          (delete 'check)    ; Most tests require fuse to be setup
+          (replace 'build
+            (lambda _
+              ;; Based on bootstrap-nofuse.sh, but with a detour to patch-shebang.
+              (invoke "./build.sh")
+              (invoke "./build/tup" "init")
+              (invoke "./build/tup" "generate" "--verbose" "build-nofuse.sh")
+              (patch-shebang "build-nofuse.sh")
+              (invoke "./build-nofuse.sh")))
+          (replace 'install
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let* ((outdir (assoc-ref outputs "out"))
+                     (ftdetect (string-append outdir
+                                              "/share/vim/vimfiles/ftdetect")))
+                (install-file "tup" (string-append outdir "/bin"))
+                (install-file "tup.1" (string-append outdir "/share/man/man1"))
+                (install-file "contrib/syntax/tup.vim"
+                              (string-append outdir "/share/vim/vimfiles/syntax"))
+                (mkdir-p ftdetect)
+                (with-output-to-file (string-append ftdetect "/tup.vim")
+                  (lambda _
+                    (display "au BufNewFile,BufRead Tupfile,*.tup setf tup")))))))))
     (inputs
-     (list fuse pcre
-           `(,pcre "bin") ; pcre-config
-           sqlite))
+     (list fuse libinih pcre2 sqlite))
     (native-inputs
      (list pkg-config))
     (home-page "https://gittup.org/tup/")
@@ -602,7 +684,9 @@ graphs of commands to be executed.  Tup instruments your build to detect the
 exact dependencies of the commands, allowing you to take advantage of ideal
 parallelism during incremental builds, and detecting any situations where
 a build worked by accident.")
-    (license license:gpl2)))
+    (license (list
+              license:gpl2
+              license:x11))))     ; src/lua
 
 (define-public osc
   (package

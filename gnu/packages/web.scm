@@ -10,7 +10,7 @@
 ;;; Copyright © 2015 Eric Dvorsak <eric@dvorsak.fr>
 ;;; Copyright © 2016 Sou Bunnbu <iyzsong@gmail.com>
 ;;; Copyright © 2016 Jelle Licht <jlicht@fsfe.org>
-;;; Copyright © 2016-2024 Efraim Flashner <efraim@flashner.co.il>
+;;; Copyright © 2016-2025 Efraim Flashner <efraim@flashner.co.il>
 ;;; Copyright © 2016 Rene Saavedra <rennes@openmailbox.org>
 ;;; Copyright © 2016 Ben Woodcroft <donttrustben@gmail.com>
 ;;; Copyright © 2016, 2023 Clément Lassieur <clement@lassieur.org>
@@ -70,6 +70,12 @@
 ;;; Copyright © 2024 Zheng Junjie <873216071@qq.com>
 ;;; Copyright © 2024, 2025 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2025 Raven Hallsby <karl@hallsby.com>
+;;; Copyright © 2025 Junker <dk@junkeria.club>"
+;;; Copyright © 2025 Jake Forster <jakecameron.forster@gmail.com>
+;;; Copyright © 2025 Remco van 't Veer <remco@remworks.net>"
+;;; Copyright © 2025 Daniel Khodabakhsh <d@niel.khodabakh.sh>
+;;; Copyright © 2025 Josep Bigorra <jjbigorra@gmail.com>
+;;; Copyright © 2025 Ashish SHUKLA <ashish.is@lostca.se>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -103,7 +109,9 @@
   #:use-module (guix build-system glib-or-gtk)
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system go)
+  #:use-module (guix build-system guile)
   #:use-module (guix build-system meson)
+  #:use-module (guix build-system node)
   #:use-module (guix build-system perl)
   #:use-module (guix build-system pyproject)
   #:use-module (guix build-system python)
@@ -381,7 +389,7 @@ one.")
 (define-public miniflux
   (package
     (name "miniflux")
-    (version "2.2.8")
+    (version "2.2.9")
     (source
      (origin
        (method git-fetch)
@@ -390,7 +398,7 @@ one.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0ynhx8bzbgq6qznsxga34wmh8lpd8xhnff7hy51xsnk52maqf3h1"))))
+        (base32 "1mfynlwbmzfgh24pv3bz7i0mprxbajx417v8hxjaalyvhxm917x6"))))
     (build-system go-build-system)
     (arguments
      (list
@@ -565,14 +573,14 @@ the same, being completely separated from the Internet.")
     ;; Track the ‘mainline’ branch.  Upstream considers it more reliable than
     ;; ’stable’ and recommends that “in general you deploy the NGINX mainline
     ;; branch at all times” (https://www.nginx.com/blog/nginx-1-6-1-7-released/)
-    (version "1.27.3")
+    (version "1.28.0")
     (source (origin
               (method url-fetch)
               (uri (string-append "https://nginx.org/download/nginx-"
                                   version ".tar.gz"))
               (sha256
                (base32
-                "00vrkdx0a6fpy8n0n7m9xws0dfa7dbb9pqnh3jv3c824ixbaj8xs"))))
+                "0sppdxbmz61y3hfcfyc20gk0ky8f3m60hppzlcy9vpy0hsqcddf6"))))
     (build-system gnu-build-system)
     (inputs (list libxcrypt libxml2 libxslt openssl pcre zlib))
     (arguments
@@ -663,9 +671,9 @@ and as a proxy to reduce the load on back-end HTTP or mail servers.")
 
 (define-public nginx-documentation
   ;; This documentation should be relevant for the current nginx package.
-  (let ((version "1.27.3")
-        (revision 3156)
-        (changeset "5c6ef6def8bc"))
+  (let ((version "1.28.0")
+        (revision 3202)
+        (changeset "16887604240f"))
     (package
       (name "nginx-documentation")
       (version (simple-format #f "~A-~A-~A" version revision changeset))
@@ -677,7 +685,7 @@ and as a proxy to reduce the load on back-end HTTP or mail servers.")
                (file-name (string-append name "-" version))
                (sha256
                 (base32
-                 "09wdvgvsr7ayjz3ypq8qsm12idb9z626j5ibmknc8phm10gh8cgk"))))
+                 "0slfgl9ap6hxcjg2fc5lfccz0sbmlk83p74i31g05a27ldrqv03l"))))
       (build-system gnu-build-system)
       (arguments
        '(#:tests? #f                    ; no test suite
@@ -1746,7 +1754,9 @@ C.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "00yj06drb6izcxfxfqlhimlrb089kka0w0x8k27pyzyiq7qzcvml"))))
+                "00yj06drb6izcxfxfqlhimlrb089kka0w0x8k27pyzyiq7qzcvml"))
+              (patches
+               (search-patches "yajl-CVE-2023-33460.patch"))))
     (build-system cmake-build-system)
     (arguments
      '(#:phases
@@ -2198,57 +2208,85 @@ begins forwarding traffic between the client and the target in both
 directions.")
     (license license:lgpl3)))
 
-;; This is a variant of esbuild that builds and installs the nodejs API.
-;; Eventually, this should probably be merged with the esbuild package.
-(define-public esbuild-node
+(define-public microsocks
   (package
-    (inherit esbuild)
-    (name "esbuild-node")
-    (version "0.14.0")
+    (name "microsocks")
+    (version "1.0.5")
     (source
      (origin
        (method git-fetch)
        (uri (git-reference
-             (url "https://github.com/evanw/esbuild")
+             (url "https://github.com/rofl0r/microsocks")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "09r1xy0kk6c9cpz6q0mxr4why373pwxbm439z2ihq3k1d5kk7x4w"))
-       (modules '((guix build utils)))
-       (snippet
-        ;; Remove prebuilt binaries
-        '(delete-file-recursively "lib/npm/exit0"))))
+        (base32
+         "0ffiwlkaylkm2ih7d96qvdy9s9ydqgypczs5k8iwkf5yv617dm74"))))
+    (build-system gnu-build-system)
     (arguments
      (list
-      #:import-path "github.com/evanw/esbuild/cmd/esbuild"
-      #:unpack-path "github.com/evanw/esbuild"
+      #:tests? #f ;no tests
+      #:make-flags #~(list "prefix=/"
+                           "CC=gcc"
+                           (string-append "DESTDIR=" #$output))
       #:phases
-      #~(modify-phases %standard-phases
-          (add-after 'build 'build-platform
-            (lambda* (#:key unpack-path #:allow-other-keys)
-              (with-directory-excursion (string-append "src/" unpack-path)
-                ;; Must be writable.
-                (for-each make-file-writable (find-files "." "."))
-                (invoke "node" "scripts/esbuild.js"
-                        (string-append #$output "/bin/esbuild"))
-                (let ((modules (string-append #$output "/lib/node_modules/esbuild")))
-                  (mkdir-p modules)
-                  (copy-recursively "npm/esbuild" modules)))))
-          (replace 'check
-            (lambda* (#:key tests? unpack-path #:allow-other-keys)
-              (when tests?
-                ;; The "Go Race Detector" is only supported on 64-bit
-                ;; platforms, this variable disables it.
-                ;; TODO: Causes too many rebuilds, rewrite to limit to x86_64,
-                ;; aarch64 and ppc64le.
-                #$(if (target-riscv64?)
-                      `(setenv "ESBUILD_RACE" "")
-                      #~(unless #$(target-64bit?)
-                          (setenv "ESBUILD_RACE" "")))
-                (with-directory-excursion (string-append "src/" unpack-path)
-                  (invoke "make" "test-go"))))))))
-    (native-inputs
-     (list go-github-com-kylelemons-godebug node-lts))))
+      '(modify-phases %standard-phases
+         (delete 'configure))))
+    (home-page "https://github.com/rofl0r/microsocks")
+    (synopsis "Tiny and lightweight SOCKS5 server")
+    (description "Microsocks is a small, efficient SOCKS5 server.")
+    (license license:expat)))
+
+(define-public node-esbuild
+  (package
+    (name "node-esbuild")
+    (version (package-version esbuild))
+    (source
+      (origin
+        (inherit (package-source esbuild))
+        (file-name (git-file-name name version))
+        (snippet #f)
+        (modules '())))
+    (build-system node-build-system)
+    (inputs (list esbuild))
+    (arguments (list
+      #:tests? #f
+      #:phases #~(modify-phases %standard-phases
+        (add-after 'unpack 'chdir (lambda _
+          (chdir "npm/esbuild")))
+        (add-before 'patch-dependencies 'modify-package (lambda _
+            (modify-json
+              (delete-fields '("optionalDependencies" "scripts")))
+            (substitute* "../../lib/npm/node-platform.ts"
+              (("^export var ESBUILD_BINARY_PATH:.+$")
+                (string-append "export var ESBUILD_BINARY_PATH: string"
+                " = process.env.ESBUILD_BINARY_PATH"
+                " || ESBUILD_BINARY_PATH"
+                " || path.join(__dirname, '..', 'bin', 'esbuild')")))))
+        (replace 'build (lambda* (#:key inputs #:allow-other-keys)
+          ; From scripts/esbuild.js
+          (invoke
+            "esbuild"
+            "../../lib/npm/node.ts"
+            "--outfile=lib/main.js"
+            "--bundle"
+            "--target=node10"
+            "--define:WASM=false"
+            (string-append "--define:ESBUILD_VERSION=\"" #$version "\"")
+            "--external:esbuild"
+            "--platform=node"
+            "--log-level=warning")
+          (copy-file "../../lib/shared/types.ts" "lib/main.d.ts")
+          (install-file
+            (string-append (assoc-ref inputs "esbuild") "/bin/esbuild")
+            "bin"))))))
+    (home-page (package-home-page esbuild))
+    (synopsis "Node module of ESBuild")
+    (description (package-description esbuild))
+    (license (package-license esbuild))))
+
+(define-public esbuild-node
+  (deprecated-package "esbuild-node" node-esbuild))
 
 (define-public wwwoffle
   (package
@@ -5324,13 +5362,13 @@ Integration Center (4DN-DCIC).")
 (define-public python-feedparser
   (package
     (name "python-feedparser")
-    (version "6.0.10")
+    (version "6.0.11")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "feedparser" version ".tar.gz"))
        (sha256
-        (base32 "0lfa1c8s6abnlksbwxdpq78bg4rb6603mcgarmip3kip8rglini7"))
+        (base32 "1mc4856draxac5s7acywq060a0awng195cpbs1js1wn6cixl1l69"))
        (patches (search-patches "python-feedparser-missing-import.patch"))))
     (build-system python-build-system)
     (propagated-inputs
@@ -5382,8 +5420,8 @@ Cloud.")
     (license license:expat)))
 
 (define-public guix-data-service
-  (let ((commit "dfbfc846d60195ae62526de13d0c662375c09b43")
-        (revision "68"))
+  (let ((commit "683b375d5679acd248aeff7e8e16424530a92346")
+        (revision "71"))
     (package
       (name "guix-data-service")
       (version (string-append "0.0.1-" revision "." (string-take commit 7)))
@@ -5395,7 +5433,7 @@ Cloud.")
                 (file-name (git-file-name name version))
                 (sha256
                  (base32
-                  "0mq04i1f9wlny6mmvn163i34573a32pq4acc966vqcvypa82q51v"))))
+                  "19z1v907dkwpg70d273avvms2vmqnimr6smx5rp5vn6p9wyv95h8"))))
       (build-system gnu-build-system)
       (arguments
        (list
@@ -5587,7 +5625,7 @@ It uses the uwsgi protocol for all the networking/interprocess communications.")
 (define-public jq
   (package
     (name "jq")
-    (version "1.7.1")
+    (version "1.8.0")
     (source
      (origin
        (method url-fetch)
@@ -5595,18 +5633,24 @@ It uses the uwsgi protocol for all the networking/interprocess communications.")
                            "/releases/download/jq-" version
                            "/jq-" version ".tar.gz"))
        (sha256
-        (base32 "1hl0wppdwwrqf3gzg3xwc260s7i1br2lnc97zr1k8bpx56hrr327"))
+        (base32 "171i5dnw15gx4ah3xv05vhlq8b5pr7zbzhjhzyan36hxz5vib0ci"))
        (modules '((guix build utils)))
        (snippet
         ;; Remove bundled onigurama.
-        '(delete-file-recursively "modules"))))
+        '(delete-file-recursively "vendor/oniguruma"))))
+    (arguments
+     (if (or (target-x86-32?)
+             (target-arm32?))
+         ;; requires 64bit time_t
+         (list #:make-flags #~'("XFAIL_TESTS=tests/optionaltest"))
+         '()))
     (inputs
      (list oniguruma))
     (native-inputs
      (append
        ;; TODO: fix gems to generate documentation
        ;(list ruby bundler)
-       '()
+       (list tzdata-for-tests)  ; needed for tests
        (if (member (%current-system)
                    (package-supported-systems valgrind/pinned))
          (list valgrind/pinned)
@@ -5620,7 +5664,10 @@ grep and friends let you play with text.  It is written in portable C.  jq can
 mangle the data format that you have into the one that you want with very
 little effort, and the program to do so is often shorter and simpler than
 you'd expect.")
-    (license (list license:expat license:cc-by3.0))))
+    (license (list license:expat license:cc-by3.0))
+    ;; Both those CVEs are actually fixed in version 1.7.1.
+    (properties `((lint-hidden-cve . ("CVE-2023-50246"
+                                      "CVE-2023-50268"))))))
 
 (define-public go-github-com-mikefarah-yq-v4
   (package
@@ -5980,6 +6027,58 @@ C.  It is developed as part of the NetSurf project.")
 parse both valid and invalid web content.  It is developed as part of the
 NetSurf project.")
     (license license:expat)))
+
+(define-public iter-vitae
+  (package
+    (name "iter-vitae")
+    (version "0.3.32")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://codeberg.org/jjba23/iter-vitae.git")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0r7zvavjflyl8wzysadgh7zmyamvdkicac7652qckgi1aaqh33nw"))))
+    (arguments
+     `(#:source-directory "src"
+       #:phases (modify-phases %standard-phases
+                  (add-before 'build 'install-program-files
+                    (lambda* (#:key outputs #:allow-other-keys)
+                      (let ((bin (string-append (assoc-ref outputs "out")
+                                                "/bin"))
+                            (share (string-append (assoc-ref outputs "out")
+                                                  "/share")))
+                        (mkdir-p (string-append share "/scripts"))
+                        (mkdir-p (string-append share "/resources"))
+                        (install-file "resources/help.txt"
+                                      (string-append share
+                                                     "/resources"))
+                        (copy-recursively "resources/js"
+                                          (string-append share "/resources/js"))
+                        (install-file "scripts/iter-vitae" bin)
+                        (install-file "scripts/log.sh"
+                                      (string-append share "/scripts/"))
+                        (chmod (string-append bin "/iter-vitae") #o755)))))))
+    (build-system guile-build-system)
+    (native-inputs (list guile-3.0))
+    (inputs (list guile-3.0 bash-minimal))
+    (synopsis
+     "Resume / @acronym{CV, Curriculum Vitae} generator written in Guile Scheme")
+    (description
+     "Iter Vitae is a command-line utility that allows you to generate a
+Resume / @acronym{CV, Curriculum Vitae}, by reading a S-expression version
+of your CV details (in Scheme code).
+
+With a @acronym{MVC, model-view-controller} approach,
+it lets you separate the data from the presentation (how the document looks).
+
+This tool creates a web-site version of your CV (using SXML and TailwindCSS),
+and is designed for long-term use, so you can update and evolve your CV over the years.
+The program supports multilingual content and is fully extensible.")
+    (home-page "https://codeberg.org/jjba23/iter-vitae")
+    (license license:agpl3+)))
 
 (define-public ikiwiki
   (package
@@ -6750,19 +6849,21 @@ tools like SSH (Secure Shell) to reach the outside world.")
 (define-public stunnel
   (package
   (name "stunnel")
-  (version "5.66")
+  (version "5.75")
   (source
     (origin
       (method url-fetch)
       (uri (string-append "https://www.stunnel.org/downloads/stunnel-"
                           version ".tar.gz"))
       (sha256
-       (base32 "172pkzp8qilj0gd92bhdi96739gjpgbcav5c7a4gd98s9mq7i0am"))))
+       (base32 "10snpaiq3xyijs3hxlf0qxs38f6njbxp9zllrgf78294hpnz07hc"))))
   (build-system gnu-build-system)
   (arguments
    (list #:configure-flags
          #~(list (string-append "--with-ssl="
                                 #$(this-package-input "openssl")))
+         #:tests? (and (not (%current-target-system))
+                       (this-package-native-input "python-cryptography"))
          #:phases
          #~(modify-phases %standard-phases
              (add-after 'unpack 'patch-output-directories
@@ -6780,10 +6881,13 @@ tools like SSH (Secure Shell) to reach the outside world.")
                    (for-each delete-file (find-files doc "^INSTALL"))))))))
   (native-inputs
    ;; For tests.
-   (list iproute
-         netcat
-         procps
-         python))
+   (if (supported-package? python-cryptography)
+       (list iproute
+             netcat
+             procps
+             python
+             python-cryptography)
+       '()))
   (inputs (list openssl perl))
   (home-page "https://www.stunnel.org")
   (synopsis "TLS proxy for clients or servers")
@@ -7001,20 +7105,14 @@ functions of Tidy.")
 (define-public hiawatha
   (package
     (name "hiawatha")
-    (version "10.11")
+    (version "11.2")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://www.hiawatha-webserver.org/files/"
                            "hiawatha-" version ".tar.gz"))
-       (modules '((guix build utils)))
-       (snippet '(begin
-                   ;; We use packaged libraries, so delete the bundled copies.
-                   (for-each delete-file-recursively
-                             (list "extra/nghttp2.tgz" "mbedtls"))
-                   #t))
        (sha256
-        (base32 "09wpgilbv13zal71v9lbsqr8c3fignygadykpd1p1pb8blb5vn3r"))))
+        (base32 "1i8vrxbvpcj6yxmshbg19gm9g8vrxds6pdra0sgld4vzj9v4zilr"))))
     (build-system cmake-build-system)
     (arguments
      `(#:tests? #f                      ; no tests included
@@ -7236,7 +7334,7 @@ command-line arguments or read from stdin.")
 (define-public python-internetarchive
   (package
     (name "python-internetarchive")
-    (version "5.1.0")
+    (version "5.4.0")
     (source
      (origin
        (method git-fetch)
@@ -7246,7 +7344,7 @@ command-line arguments or read from stdin.")
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "186nx0dj0lgqrqkg9kzng5h0scbz3m6bk44vj83wzckr8yh3q08z"))))
+         "0wfzz22daiax20v0xc2is3i3plk7mcz9m0is52nwdrvx9dazi0nq"))))
     (build-system pyproject-build-system)
     (arguments
      (list
@@ -7258,19 +7356,14 @@ command-line arguments or read from stdin.")
               " and not test_upload"
               " and not test_ia"))))
     (propagated-inputs
-     (list python-backports-csv
-           python-clint
-           python-docopt
-           python-importlib-metadata
-           python-jsonpatch
+     (list python-jsonpatch
            python-requests
-           python-six
            python-schema
-           python-tqdm))
+           python-tqdm
+           python-urllib3))
     (native-inputs
      (list nss-certs-for-test
            python-pytest
-           python-pytest-capturelog
            python-responses
            python-setuptools
            python-wheel))
@@ -7497,6 +7590,37 @@ file links.")
      "Castor is a graphical client for plain-text protocols written in
 Rust with GTK.  It currently supports the Gemini, Gopher and Finger
 protocols.")
+    (license license:expat)))
+
+(define-public civetweb
+  (package
+    (name "civetweb")
+    (version "1.16")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/civetweb/civetweb")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1rdajgr0243ma8sg7qn03v6f8pnbj9w2dghi751zrdg1d1zzjxkr"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list "-DBUILD_SHARED_LIBS=ON"
+              "-DCIVETWEB_ENABLE_CXX=ON"
+              "-DCIVETWEB_ENABLE_ZLIB=ON"
+              ;; The tests rely on downloading their fork of Check.
+              "-DCIVETWEB_BUILD_TESTING=OFF")))
+    (inputs (list zlib))
+    (home-page "https://github.com/civetweb/civetweb")
+    (synopsis "C/C++ embeddable web server")
+    (description
+     "CivetWeb is a web server with optional @acronym{CGI, Common Gateway
+Interface} and @acronym{SSL, Secure Sockets Layer} support.  It can be
+embedded into C/C++ applications or used as a standalone web server.")
     (license license:expat)))
 
 (define-public clearsilver
@@ -8708,7 +8832,7 @@ compressed JSON header blocks.
 (define-public nghttp3
   (package
     (name "nghttp3")
-    (version "1.8.0")
+    (version "1.10.1")
     (source
      (origin
        (method url-fetch)
@@ -8717,7 +8841,7 @@ compressed JSON header blocks.
                            "nghttp3-" version ".tar.gz"))
        (sha256
         (base32
-         "0gpnqibb1ndqq7yacl2f9d7iznfbzws71rza12kaf72shqvyn1zv"))))
+         "18lik57yb3zc5g17s18ymd268p037wly0hgvw6n9h48l09jqqv68"))))
     (build-system gnu-build-system)
     (native-inputs
      (list pkg-config))

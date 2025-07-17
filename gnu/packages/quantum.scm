@@ -1,6 +1,6 @@
 ;;; GNU Guix --- Functional package management for GNU
 ;;; Copyright © 2024 Michal Atlas <michal_atlas+git@posteo.net>
-;;; Copyright © 2024 Guillaume Le Vaillant <glv@posteo.net>
+;;; Copyright © 2024, 2025 Guillaume Le Vaillant <glv@posteo.net>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -35,12 +35,16 @@
      (origin
        (method git-fetch)
        (uri (git-reference
-             (url "https://github.com/rigetti/rpcq")
-             (commit (string-append "v" version))))
+              (url "https://github.com/rigetti/rpcq")
+              (commit (string-append "v" version))))
        (file-name (git-file-name "cl-rpcq" version))
        (sha256
         (base32 "1bvppxlacvp0pfdbpn7ls1zxd127jacl225ds7lph5s8f8cyvf17"))))
     (build-system asdf-build-system/sbcl)
+    (arguments
+     (list
+      ;; TODO: https://github.com/rigetti/rpcq/issues/161
+      #:tests? #f))
     (native-inputs (list sbcl-fiasco))
     (inputs
      (list sbcl-alexandria
@@ -160,6 +164,14 @@ standard gates and instructions")
               (substitute* "app/src/qvm-app-version.lisp"
                 (("\\(git-hash '#:qvm-app\\)")
                  "\"unknown\""))))
+          (add-after 'unpack 'fix-build
+            (lambda _
+              ;; Don't use symbol that doesn't exists in swank 2.31.
+              (substitute* "app/src/entry-point.lisp"
+                (("\\(defvar swank:\\*use-dedicated-output-stream\\*\\)")
+                 "")
+                (("\\(setf swank:\\*use-dedicated-output-stream\\* nil\\)")
+                 ""))))
           (add-after 'create-asdf-configuration 'build-program
             (lambda* (#:key outputs #:allow-other-keys)
               (build-program (string-append (assoc-ref outputs "bin")

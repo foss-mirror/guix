@@ -311,7 +311,7 @@ from a client application and provide access to the desired reader.")
                     '("ATR_analysis" "gscriptor" "scriptor"))
                    (wrap-program (string-append #$output "/bin/gscriptor")
                      `("GI_TYPELIB_PATH" = (,(getenv "GI_TYPELIB_PATH")))))))))
-    (native-inputs (list autoconf automake libtool gnu-gettext pkg-config))
+    (native-inputs (list autoconf automake libtool gettext-minimal pkg-config))
     (inputs (list bash-minimal          ;for wrap-program
                   perl
                   perl-gtk3
@@ -381,7 +381,7 @@ website for more information about Yubico and the YubiKey.")
                   (("DEFAULT_PCSC_PROVIDER=\"libpcsclite\\.so\\.1\"")
                    (string-append "DEFAULT_PCSC_PROVIDER=\"" libpcsclite "\"")))))))))
     (inputs
-     (list readline openssl-1.1 pcsc-lite ccid))
+     (list readline openssl pcsc-lite ccid))
     (native-inputs
      (list libxslt docbook-xsl pkg-config))
     (home-page "https://github.com/OpenSC/OpenSC/wiki")

@@ -1,5 +1,6 @@
 ;;; GNU Guix --- Functional package management for GNU
 ;;; Copyright © 2019 Carl Dong <contact@carldong.me>
+;;; Copyright © 2025 fanquake <fanquake@gmail.com>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -34,14 +35,14 @@
          (xgcc (cross-gcc triplet #:libc xlibc)))
     (package
       (name (string-append "nsis-" machine))
-      (version "3.10")
+      (version "3.11")
       (source (origin
                 (method url-fetch)
                 (uri (string-append "http://prdownloads.sourceforge.net/nsis/nsis-"
                                     version "-src.tar.bz2"))
                 (sha256
                  (base32
-                  "15xj1izz3cmaw0mazsvfm8jpr132dyphlw5j0pszwimb0xilmd8i"))
+                  "0jzz07acshml9fq60v48sgzxp74p1fl2n0yw25ycdgbfcxi21rqr"))
                 (patches (search-patches "nsis-env-passthru.patch"))))
       (build-system scons-build-system)
       (native-inputs `(("xgcc" ,xgcc)
@@ -85,41 +86,23 @@
                            (string delimiter)))
                         (define (mingw-path? path)
                           (string-prefix? (assoc-ref %build-inputs "mingw-w64") path))
+                        (define (xgcc-path? path)
+                          (string-prefix? (assoc-ref %build-inputs "xgcc") path))
+                        (define (cross-toolchain-path? path)
+                          (or (xgcc-path? path) (mingw-path? path)))
+
                         (for-each
                          (lambda (env-name)
                            (let ((env-val (getenv env-name)))
-                             ;; Remove all mingw-w64 paths from env vars meant
+                             ;; Remove all mingw-w64 and xgcc paths from env vars meant
                              ;; for native toolchain
                              (setenv env-name
-                                     (filter-delimited-string env-val (negate mingw-path?)))
+                                     (filter-delimited-string env-val (negate cross-toolchain-path?)))
                              ;; Add the removed paths back into CROSS_-prefixed
                              ;; version of env vars
                              (setenv (string-append "CROSS_" env-name)
-                                     (filter-delimited-string env-val mingw-path?))))
-                         '("C_INCLUDE_PATH" "CPLUS_INCLUDE_PATH" "LIBRARY_PATH"))
-                        ;; Hack to place mingw-w64 path at the end of search
-                        ;; paths.  Could probably use a specfile and dirafter
-                        (setenv "CROSS_C_INCLUDE_PATH"
-                                (string-join
-                                 `(,@(map (cut string-append
-                                               (assoc-ref %build-inputs "xgcc")
-                                               "/lib/gcc/" ,triplet "/"
-                                               ,(package-version xgcc) <>)
-                                          '("/include"
-                                            "/include-fixed"))
-                                   ,(getenv "CROSS_C_INCLUDE_PATH"))
-                                 ":"))
-                        (setenv "CROSS_CPLUS_INCLUDE_PATH"
-                                (string-join
-                                 `(,@(map (cut string-append (assoc-ref %build-inputs "xgcc") <>)
-                                          `("/include/c++"
-                                            ,(string-append "/include/c++/" ,triplet)
-                                            "/include/c++/backward"
-                                            ,@(map (cut string-append "/lib/gcc/" ,triplet "/" ,(package-version xgcc) <>)
-                                                   '("/include"
-                                                     "/include-fixed"))))
-                                   ,(getenv "CROSS_CPLUS_INCLUDE_PATH"))
-                                 ":"))))
+                                     (filter-delimited-string env-val cross-toolchain-path?))))
+                         '("C_INCLUDE_PATH" "CPLUS_INCLUDE_PATH" "LIBRARY_PATH"))))
                     (add-before 'build 'fix-target-detection
                       (lambda _
                         ;; NSIS target detection is screwed up, manually change

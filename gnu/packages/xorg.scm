@@ -37,7 +37,7 @@
 ;;; Copyright © 2022 Petr Hodina <phodina@protonmail.com>
 ;;; Copyright © 2023 Zheng Junjie <873216071@qq.com>
 ;;; Copyright © 2023, 2024 Janneke Nieuwenhuizen <janneke@gnu.org>
-;;; Copyright © 2023, 2024 John Kehayias <john.kehayias@protonmail.com>
+;;; Copyright © 2023, 2024, 2025 John Kehayias <john.kehayias@protonmail.com>
 ;;; Copyright © 2023, 2024 Kaelyn Takata <kaelyn.alexi@protonmail.com>
 ;;; Copyright © 2024 Nicolas Graves <ngraves@ngraves.fr>
 ;;; Copyright © 2025 Artyom V. Poptsov <poptsov.artyom@gmail.com>
@@ -3910,15 +3910,16 @@ extension to the X11 protocol.  It includes:
 (define-public xkeyboard-config
   (package
     (name "xkeyboard-config")
-    (version "2.38")
+    (version "2.44")
     (source (origin
               (method url-fetch)
               (uri (string-append
-                    "ftp://ftp.freedesktop.org/pub/xorg//individual/data/xkeyboard-config/"
-                    "xkeyboard-config-" version ".tar.xz"))
+                    "mirror://xorg/individual/data/" name "/" name "-"
+                    version
+                    ".tar.xz"))
               (sha256
                (base32
-                "0wn8asnbz111194ksi2mysa6ikn4kqgd9rpfydl8icc6mcdsk406"))))
+                "0aillh6pmx5ji5jbqviq007vvg69ahz5832rz941s0xvxqzc7ljl"))))
     (build-system meson-build-system)
     (inputs (list libx11 xkbcomp-intermediate))
     (native-inputs (list gettext-minimal libxslt perl pkg-config python))
@@ -6257,7 +6258,7 @@ basic eye-candy effects.")
 (define-public xpra
   (package
     (name "xpra")
-    (version "6.2.5")
+    (version "6.3.1")
     (source
      (origin
        (method git-fetch)
@@ -6266,7 +6267,7 @@ basic eye-candy effects.")
            (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0lzyhbhqqcp6z0dswprzp13wrnvyfclkh7ddhblvhi422mk0v3sx"))
+        (base32 "1ilb6sii5xjqnjj2c84vhixw8cnsxb3nr63miv31x1pimy6wn0hw"))
        (patches (search-patches "xpra-6.0-systemd-run.patch"
                                 "xpra-6.1-install_libs.patch"))))
     (build-system python-build-system)

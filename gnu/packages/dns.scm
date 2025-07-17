@@ -310,7 +310,13 @@ prompt the user with the option to go with insecure DNS only.")
      (list dbus))
     (arguments
      `(#:phases
-       (modify-phases %standard-phases (delete 'configure))
+       (modify-phases %standard-phases
+         (delete 'configure)
+         (add-after 'install 'install-dbus
+           (lambda _
+             (install-file "dbus/dnsmasq.conf"
+                           (string-append %output "/etc/dbus-1/system.d")))))
+
        #:make-flags (list (string-append "PREFIX=" (assoc-ref %outputs "out"))
                           (string-append "CC=" ,(cc-for-target))
                           (string-append "PKG_CONFIG=" ,(pkg-config-for-target))
@@ -636,14 +642,14 @@ BIND and djbdns---whilst using relatively little memory.")
 (define-public unbound
   (package
     (name "unbound")
-    (version "1.23.0")
+    (version "1.23.1")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://www.unbound.net/downloads/unbound-"
                            version ".tar.gz"))
        (sha256
-        (base32 "1f1vl0sygkx6rv1mz6zw6mdmymp5dnjkgqkyysrxf5jkhzrxb6wm"))))
+        (base32 "14156vzhj9mjpncgaws45zagd48msw7pwfa3hs3f73cxg5y12sva"))))
     (build-system gnu-build-system)
     (outputs '("out" "python"))
     (native-inputs
@@ -1285,7 +1291,7 @@ nameservers other than libc.")
 (define-public smartdns
   (package
     (name "smartdns")
-    (version "46")
+    (version "46.1")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1297,7 +1303,7 @@ nameservers other than libc.")
                           ((".*SYSTEMDSYSTEMUNITDIR.*") "")))
               (sha256
                (base32
-                "0kllf623x5g7zh81nm41y3k67vsnm7a0dcdhdm0l6q4wyvr4z4zc"))))
+                "0jjzvm4i5978gb2xhkx7fhqwzgjnvwyk9a2d88zzv93mal7q9xi2"))))
     (build-system gnu-build-system)
     (arguments
      (list #:test-target "test"

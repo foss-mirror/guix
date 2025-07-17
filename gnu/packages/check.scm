@@ -55,6 +55,7 @@
 ;;; Copyright © 2024, 2025 gemmaro <gemmaro.dev@gmail.com>
 ;;; Copyright © 2024 Ashvith Shetty <ashvithshetty10@gmail.com>
 ;;; Copyright © 2025 Jordan Moore <lockbox@struct.foo>
+;;; Copyright © 2025 Nicolas Graves <ngraves@ngraves.fr>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -3657,7 +3658,7 @@ retried.")
 (define-public python-pyhamcrest
   (package
     (name "python-pyhamcrest")
-    (version "2.0.2")
+    (version "2.0.3")
     (source (origin
               (method git-fetch)        ;no tests in PyPI archive
               (uri (git-reference
@@ -3666,7 +3667,7 @@ retried.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "05kdzlhs2kvj82pfca13qszszcj6dyrk4b9pbr46x06sq2s4qyls"))))
+                "0j0fpd7vw700l6gx29gz9j28d22ajkz6sngfzp4c8an4ibd2fw85"))))
     (native-inputs                      ;all native inputs are for tests
      (list python-pytest-cov python-mock python-pytest python-hypothesis))
     (build-system python-build-system)
@@ -4441,6 +4442,34 @@ helpers for writing tests.")
 command line filters to process a subunit stream and language bindings for
 Python, C, C++ and shell.  Bindings are easy to write for other languages.")
     (license (list license:asl2.0 license:bsd-3)))) ;user can pick
+
+(define-public uitest
+  ;; XXX: No releases.
+  (let ((commit "d845427140cbcbce99bb6c72919199ac5f033784")
+        (revision "0"))
+    (package
+      (name "uitest")
+      (version (git-version "0.0.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/Grumbel/uitest")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0bgpqakls8bs3n3v0igni9xgyrc4sp43b4bf85f7jnv1rxr88gf4"))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        #:configure-flags
+        #~(list "-DBUILD_TESTS=ON")))
+      (native-inputs (list googletest tinycmmc))
+      (home-page "https://github.com/Grumbel/uitest")
+      (synopsis "Simple testing framework for interactive tests")
+      (description
+       "This package is a simple helper library for writing interactive tests.")
+      (license license:gpl3+))))
 
 (define-public munit
   ;; Last release in 2016, see also <https://github.com/nemequ/munit/issues/95>.

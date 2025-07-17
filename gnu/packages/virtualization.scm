@@ -41,6 +41,7 @@
 ;;; Copyright © 2024, 2025 Giacomo Leidi <goodoldpaul@autistici.org>
 ;;; Copyright © 2024 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2025 Karl Hallsby <karl@hallsby.com>
+;;; Copyright © 2025 Douglas Deslauriers <Douglas.Deslauriers@vector.com>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -149,6 +150,8 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages readline)
   #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages rsync)
   #:use-module (gnu packages sdl)
   #:use-module (gnu packages selinux)
@@ -316,20 +319,11 @@
                       (lambda _
                         (substitute* "pc-bios/meson.build"
                           ((".*(pxe|efi)-.*") ""))
-                        (substitute* "tests/qtest/meson.build"
-                          ((".*qom-test.*") "")
-                          ((".*qos-test.*") "")
-                          ((".*test-hmp.*") "")
-                          ((".*'pxe-test':.*") "")
-                          ((",? ?'boot-serial-test',?") "")
-                          ((",? ?'endianness-test',?") "")
-                          ((",? ?'prom-env-test',?") "")
-                          ((",? ?'pxe-test',?") "")
-                          ((",? ?'test-filter-mirror',?") "")
-                          ((",? ?'test-filter-redirector',?") "")
-                          ((",? ?'test-netfilter',?") "")
-                          ;; Fix the slow_qtests array after the substitutions
-                          (("  : .*") "")))))
+                        ;; Skip all the tests in tests/qtest instead
+                        ;; of cherry-picking the tests which need the
+                        ;; ipxe-qemu firmware.
+                        (substitute* "tests/meson.build"
+                          (("subdir.*qtest.*") "")))))
                  #~())
           (add-after 'unpack 'extend-test-time-outs
             (lambda _
@@ -1811,15 +1805,15 @@ virtualization library.")
                               "not test_disk and "
                               "not virt_clone"))))))))
     (native-inputs
-     (list cdrtools
-           cpio
+     (list cpio
            gettext-minimal
            `(,glib "bin")               ;glib-compile-schemas
            gobject-introspection
            `(,gtk+ "bin")               ;gtk-update-icon-cache
            pkg-config
            python-docutils              ;rst2ma
-           python-pytest))
+           python-pytest
+           xorriso))
     (inputs
      (list bash-minimal
            dconf
@@ -1902,6 +1896,9 @@ domains, their live performance and resource utilization statistics.")
                 (("/bin/fusermount3")
                  (string-append
                   #$(this-package-input "fuse") "/bin/fusermount3")))
+              (substitute* "lib/guestApp/guestApp.c"
+                (("/etc/vmware-tools")
+                 (string-append #$output "/etc/vmware-tools")))
               ;; XXX: This part might need more testing with shutdown and halt
               ;; commands provided by Shepherd.
               (substitute* "lib/system/systemLinux.c"
@@ -2381,7 +2378,7 @@ Open Container Initiative (OCI) image layout and its tagged images.")
 (define-public skopeo
   (package
     (name "skopeo")
-    (version "1.18.0")
+    (version "1.19.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -2390,10 +2387,10 @@ Open Container Initiative (OCI) image layout and its tagged images.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1rql5yw1ppvh2fppan413irn11jplxj8kmna0zrsy9kniiskbkas"))))
+                "1gwp8k9bxkis7qwcy7l2mrclii039fqrslvkb5q4rfhlrzqcqbay"))))
     (build-system gnu-build-system)
     (native-inputs
-     (list go-1.22
+     (list go-1.23
            go-md2man
            pkg-config))
     (inputs
@@ -2489,7 +2486,7 @@ use it.")
                 "1bkzz3mj7kzsv6k0ii8w31cgkpiqw3wvmvv2c6rknsavqqnagb4g"))))
     (build-system ruby-build-system)
     ;; (native-inputs (list ruby-rubocop ruby-vagrant-spec-helper-basic))
-    (propagated-inputs (list ruby-coveralls ruby-serverspec ruby-dep))
+    (propagated-inputs (list ruby-coveralls ruby-serverspec))
     (arguments
      (list
       #:tests? #f  ;; tests require vagrant
@@ -2964,14 +2961,14 @@ administrators and developers in managing the database.")
 (define-public osinfo-db
   (package
     (name "osinfo-db")
-    (version "20240701")
+    (version "20250124")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://releases.pagure.org/libosinfo/osinfo-db-"
                            version ".tar.xz"))
        (sha256
-        (base32 "0pchyq749nh6ivvd3d9bgd7zqdqa07x94jpsprrz8i8c5ykq2wqx"))))
+        (base32 "0l3j4lxgixqys1zmqs195rlb181n2kfyz7mkl8sq2yasjzq1g9vw"))))
     (build-system trivial-build-system)
     (arguments
      (list
@@ -3374,12 +3371,12 @@ create_header"))))))))))
     (native-inputs
      (modify-inputs (package-native-inputs libguestfs-minimal)
        (prepend bash-completion
-                cdrtools
                 gobject-introspection
                 python
                 ruby
                 util-linux
-                vala)))
+                vala
+                xorriso)))
     (inputs
      (modify-inputs (package-inputs libguestfs-minimal)
        (prepend acl

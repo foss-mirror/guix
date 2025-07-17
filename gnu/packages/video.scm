@@ -70,6 +70,8 @@
 ;;; Copyright © 2023, 2024 Zheng Junjie <873216071@qq.com>
 ;;; Copyright © 2024 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2024 aurtzy <aurtzy@gmail.com>
+;;; Copyright © 2025 Formbi <formbi@protonmail.com>
+;;; Copyright © 2025 Sharlatan Hellseher <sharlatanus@gmail.ccom>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -154,6 +156,8 @@
   #:use-module (gnu packages gnome)
   #:use-module (gnu packages gnunet)
   #:use-module (gnu packages gnupg)
+  #:use-module (gnu packages golang-build)
+  #:use-module (gnu packages golang-xyz)
   #:use-module (gnu packages gstreamer)
   #:use-module (gnu packages gtk)
   #:use-module (gnu packages haskell-xyz)
@@ -218,6 +222,7 @@
   #:use-module (gnu packages vulkan)
   #:use-module (gnu packages web)
   #:use-module (gnu packages wget)
+  #:use-module (gnu packages wm)
   #:use-module (gnu packages wxwidgets)
   #:use-module (gnu packages xdisorg)
   #:use-module (gnu packages xiph)
@@ -840,33 +845,29 @@ mpv's powerful playback capabilities.")
 (define-public liba52
   (package
     (name "liba52")
-    (version "0.7.4")
-    (source (origin
-              (method url-fetch)
-              (uri (string-append
-                    ;; A mirror://sourceforge URI doesn't work, presumably
-                    ;; because the SourceForge project is misconfigured.
-                    "http://liba52.sourceforge.net/files/a52dec-" version
-                    ".tar.gz"))
-              (sha256
-               (base32
-                "0czccp4fcpf2ykp16xcrzdfmnircz1ynhls334q374xknd5747d2"))
-              (patches (search-patches "liba52-enable-pic.patch"
-                                       "liba52-set-soname.patch"
-                                       "liba52-use-mtune-not-mcpu.patch"
-                                       "liba52-link-with-libm.patch"))))
+    (version "0.8.0")
+    (source
+     (origin (method git-fetch)
+             (uri (git-reference
+                   (url "https://git.adelielinux.org/community/a52dec")
+                   (commit (string-append "v" version))))
+             (file-name (git-file-name name version))
+             (sha256
+              (base32 "0k1y7irz1hqfzs6yqv4brgwpa04biv50z05gc584h9md0y5y52k7"))
+             (modules '((guix build utils)))
+             (snippet
+              #~(begin (substitute* "liba52/Makefile.am"
+                         ;; Set so name to liba52-$(VERSION).so
+                         (("liba52_la_LDFLAGS = -no-undefined" all)
+                          (string-append all " -release @VERSION@")))
+                       (substitute* "liba52/configure.incl"
+                         ;; Don't avoid -fPIC
+                         (("^.+-prefer-non-pic.*$") ""))
+                       (substitute* "configure.ac" (("-mcpu") "-mtune"))))))
     (build-system gnu-build-system)
-    ;; XXX We need to run ./bootstrap because of the build system fixes above.
-    (native-inputs
-     (list autoconf automake libtool))
-    (arguments `(#:configure-flags '("--enable-shared")
-                 #:phases
-                 (modify-phases %standard-phases
-                   ;; XXX We need to run ./bootstrap because of the build
-                   ;; system fixes above.
-                   (replace 'bootstrap
-                     (lambda _ (invoke "sh" "bootstrap"))))))
-    (home-page "https://liba52.sourceforge.net/")
+    (native-inputs (list autoconf automake libtool))
+    (arguments (list #:configure-flags #~(list "--enable-shared")))
+    (home-page "https://git.adelielinux.org/community/a52dec/")
     (synopsis "ATSC A/52 audio stream decoder")
     (description "liba52 is a library for decoding ATSC A/52 audio streams.
 The A/52 standard is used in a variety of applications, including digital
@@ -1009,14 +1010,14 @@ H.264 (MPEG-4 AVC) video streams.")
 (define-public mkvtoolnix
   (package
     (name "mkvtoolnix")
-    (version "80.0")
+    (version "93.0")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://mkvtoolnix.download/sources/"
                            "mkvtoolnix-" version ".tar.xz"))
        (sha256
-        (base32 "1x9k9pmw7mzm2amvm251a45dlj9p9iqfank5p4w2fizxkapws25v"))
+        (base32 "0y2zhf49s9ajkjl328ayphdzmmlzqk1slc0c8akpj2rf59lac44m"))
        (modules '((guix build utils)))
        (snippet '(begin
                    ;; Delete bundled libraries.
@@ -1038,7 +1039,7 @@ H.264 (MPEG-4 AVC) video streams.")
            libebml
            file
            flac
-           fmt-8
+           fmt-11
            libdvdread
            libmatroska
            libogg
@@ -1061,7 +1062,7 @@ H.264 (MPEG-4 AVC) video streams.")
            pkg-config
            po4a
            qttools
-           ruby-3.2))
+           ruby-3.4))
     (arguments
      (list
       #:configure-flags
@@ -1917,7 +1918,16 @@ audio/video codec library.")
                   "--enable-libaom"
                   "--enable-librav1e"
                   "--enable-libsrt"
-                  "--enable-libsvtav1")))))
+                  "--enable-libsvtav1")))
+       ((#:phases phases)
+        #~(modify-phases #$phases
+            (add-after 'configure 'relax-gcc-14-strictness
+              (lambda _
+              (substitute* "ffbuild/config.mak"
+                (("CFLAGS *=" all)
+                 (string-append all
+                                " -Wno-error=incompatible-pointer-types"
+                                " -Wno-error=int-conversion")))))))))
     (inputs (modify-inputs (package-inputs ffmpeg-4)
               (delete "dav1d" "libaom" "rav1e" "srt")))))
 
@@ -2622,10 +2632,12 @@ SVCD, DVD, 3ivx, DivX 3/4/5, WMV and H.264 movies.")
       #:configure-flags
       #~(list "-Dlibmpv=true"
               "-Dcdda=enabled"
+              "-Ddmabuf-wayland=enabled"
               "-Ddvdnav=enabled"
               "-Dbuild-date=false")))
     (native-inputs
-     (list perl                         ;for zsh completion file
+     (list libdisplay-info
+           perl                         ;for zsh completion file
            pkg-config
            python-docutils
            python-wrapper))
@@ -2875,7 +2887,7 @@ images and image hosting sites.")
            xorg-server-for-tests
            xvfb-run))
     (inputs
-     (list ffmpeg glib mpv))
+     (list ffmpeg glib libdisplay-info mpv))
     (home-page "https://github.com/hoyon/mpv-mpris")
     (synopsis "MPRIS plugin for mpv")
     (description "This package provides an @dfn{MPRIS} (Media Player Remote
@@ -3108,7 +3120,7 @@ YouTube.com and many more sites.")
 (define-public yt-dlp
   (package
     (name "yt-dlp")
-    (version "2025.05.22")
+    (version "2025.06.30")
     (source
      (origin
        (method git-fetch)
@@ -3120,7 +3132,7 @@ YouTube.com and many more sites.")
        (snippet '(substitute* "pyproject.toml"
                    (("^.*Programming Language :: Python :: 3\\.13.*$") "")))
        (sha256
-        (base32 "0sgiwah8qcinc9idvn8garnmqd9rj07cjfndy7z1qvakczknw5q2"))))
+        (base32 "14pk2rk5vm9469ghkvciaz74fihbl8dfi27qj6xnxv71hpm5w03p"))))
     (build-system pyproject-build-system)
     (arguments
      `(#:tests? ,(not (%current-target-system))
@@ -3340,6 +3352,51 @@ Both command-line and GTK2 interface are available.")
     (description "ytcc is a command line tool to keep track of your favorite
 playlists.")
     (license license:gpl3+)))
+
+(define-public ytarchive
+  (package
+    (name "ytarchive")
+    (version "0.5.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/Kethsar/ytarchive")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1mx7w423rr6s4zvv65sbzl5rifj67rb0pzxjpi2y69l9p1vynmv3"))))
+    (build-system go-build-system)
+    (arguments
+     (list
+      #:install-source? #f
+      #:import-path "github.com/Kethsar/ytarchive"
+      #:embed-files #~(list "children" "nodes" "text")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'install 'wrap
+            (lambda _
+              (wrap-program (string-append #$output "/bin/ytarchive")
+                `("PATH" ":" prefix
+                  (,(string-append #$(this-package-input "ffmpeg")
+                                   "/bin/ffmpeg")))))))))
+    (native-inputs
+     (list go-github-com-alessio-shellescape
+           go-github-com-dannav-hhmmss
+           go-github-com-mattn-go-colorable
+           go-github-com-xhit-go-str2duration-v2
+           go-golang-org-x-net
+           go-golang-org-x-sys))
+    (inputs
+     (list ffmpeg))
+    (home-page "https://github.com/Kethsar/ytarchive")
+    (synopsis "Youtube livestream downloader")
+    (description
+     "Attempt to archive a given Youtube livestream from the start.  This is
+most useful for streams that have already started and you want to download,
+but can also be used to wait for a scheduled stream and start downloading as
+soon as it starts.")
+    (license license:expat)))
 
 (define-public libbluray
   (package
@@ -3823,7 +3880,7 @@ from sites like Twitch.tv and pipes them into a video player of choice.")
 (define-public mlt
   (package
     (name "mlt")
-    (version "7.30.0")
+    (version "7.32.0")
     (source
      (origin
        (method git-fetch)
@@ -3832,11 +3889,12 @@ from sites like Twitch.tv and pipes them into a video player of choice.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0zks2h5rb8v5y24nwd33cfkzja6qbibify5gf1wv77w1hgf02gml"))))
+        (base32 "0v7xlm526b0kjm3jfmd0yc6yr7rnggn4b61gzdx9b41zlnyfhslf"))))
     (build-system cmake-build-system)
     (arguments
      (list
       #:tests? #f                       ;requires "Kwalify"
+      #:configure-flags #~(list "-DSWIG_PYTHON=On")
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'install 'wrap-executable
@@ -3881,7 +3939,7 @@ from sites like Twitch.tv and pipes them into a video player of choice.")
            sox
            vidstab))
     (native-inputs
-     (list pkg-config))
+     (list pkg-config python-minimal swig))
     (home-page "https://www.mltframework.org/")
     (synopsis "Author, manage, and run multitrack audio/video compositions")
     (description
@@ -5123,7 +5181,7 @@ post-processing of video formats like MPEG2, H.264/AVC, and VC-1.")
 (define-public openh264
   (package
     (name "openh264")
-    (version "2.5.0")
+    (version "2.6.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -5132,7 +5190,7 @@ post-processing of video formats like MPEG2, H.264/AVC, and VC-1.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1lkzidgb3835jjf3qd56avgb7ag4s6l4yvi2b3aacfqpzvh7vjib"))))
+                "1n2x74h1j2sbljkqa0d810gkp7p81al8nv8lzcm4l2hk22gjbzdm"))))
     (build-system gnu-build-system)
     (native-inputs
      (list nasm python))
@@ -6824,7 +6882,7 @@ included for convenience.")
                     (("gtk4-update-icon-cache")
                      "true")))))))
     (native-inputs
-     (list (list glib "bin") gnu-gettext pkg-config))
+     (list (list glib "bin") gettext-minimal pkg-config))
     (inputs
      (list libevdev eudev libinput glib gtk libadwaita json-glib cairo pango
            libxkbcommon polkit))

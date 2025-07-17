@@ -439,6 +439,31 @@ and workspaces that can be used in the compiler environment of your choice.")
        (prepend (module-ref (resolve-interface '(gnu packages debug))
                             'cppdap))))))
 
+(define-public cmake-minimal-3.30
+  (package
+    (inherit cmake-minimal)
+    (version "3.30.3")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append "https://cmake.org/files/v"
+                                  (version-major+minor version)
+                                  "/cmake-" version ".tar.gz"))
+              (sha256
+               (base32
+                "1r48zym4dy4mvwzk704zh1vx9gb4a910f424ypvis28mcxdy2pbd"))))
+    (arguments
+     (substitute-keyword-arguments (package-arguments cmake-minimal)
+       ((#:phases phases)
+        #~(modify-phases #$phases
+            (delete 'delete-help-documentation)))))
+    (native-inputs
+     (modify-inputs (package-native-inputs cmake-minimal)
+       ;; Avoid circular dependency with (gnu packages debug).  Note: cppdap
+       ;; is built with cmake, so when the default cmake-minimal is updated to
+       ;; this version this circular dependency will need to be worked around.
+       (prepend (module-ref (resolve-interface '(gnu packages debug))
+                            'cppdap))))))
+
 (define-public cmake-minimal-cross
   (package
     (inherit cmake-minimal)
@@ -532,12 +557,7 @@ or package manifest (Cargo.toml file).")
     (outputs '("out"))
     (build-system emacs-build-system)
     (arguments
-     (list #:phases
-           #~(modify-phases %standard-phases
-               (add-after 'unpack 'chdir-elisp
-                 ;; Elisp directory is not in root of the source.
-                 (lambda _
-                   (chdir "Auxiliary"))))))
+     (list #:lisp-directory "Auxiliary"))
     (synopsis "Emacs major mode for editing Cmake expressions")
     (description "@code{cmakeos-mode} provides an Emacs major mode for editing
 Cmake files.  It supports syntax highlighting, indenting and refilling of
@@ -586,25 +606,28 @@ C/C++ projects.  It features:
       (license license:expat))))
 
 (define-public tinycmmc
-  (package
-    (name "tinycmmc")
-    (version "0.1.0")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://github.com/Grumbel/tinycmmc")
-                    (commit (string-append "v" version))))
-              (file-name (git-file-name name version))
-              (sha256
-               (base32
-                "0chv7h6vnd8zpa6b69krxwdgvp3n5fd37355wa1zwi14x4nyyay5"))))
-    (build-system cmake-build-system)
-    (arguments (list #:tests? #f))      ;no test suite
-    (home-page "https://github.com/Grumbel/tinycmmc")
-    (synopsis "Tiny CMake Module Collections")
-    (description "The tinycmmc package contains a small collection of reusable
+  ;; XXX: Does not release anymore.
+  (let ((commit "8238a6c1b90536e211fddf356dc3af26ea7c2f2c")
+        (revision "0"))
+    (package
+      (name "tinycmmc")
+      (version (git-version "0.1.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/Grumbel/tinycmmc")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "1nv1439psdnq99vqpmp4nj2630l85cfwxzmf7rgpa436q09ql77p"))))
+      (build-system cmake-build-system)
+      (arguments (list #:tests? #f))      ;no test suite
+      (home-page "https://github.com/Grumbel/tinycmmc")
+      (synopsis "Tiny CMake Module Collections")
+      (description "The tinycmmc package contains a small collection of reusable
 CMake modules.")
-    (license license:zlib)))
+      (license license:zlib))))
 
 (define-public cpm-cmake
   (package

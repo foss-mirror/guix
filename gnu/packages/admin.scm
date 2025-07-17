@@ -72,7 +72,7 @@
 ;;; Copyright © 2024 nathan <nathan_mail@nborghese.com>
 ;;; Copyright © 2024 Nikita Domnitskii <nikita@domnitskii.me>
 ;;; Copyright © 2024 Roman Scherer <roman@burningswell.com>
-;;; Copyright © 2024 Ashish SHUKLA <ashish.is@lostca.se>
+;;; Copyright © 2024, 2025 Ashish SHUKLA <ashish.is@lostca.se>
 ;;; Copyright © 2024 Ashvith Shetty <ashvithshetty10@gmail.com>
 ;;; Copyright © 2025 Dariqq <dariqq@posteo.net>
 ;;; Copyright © 2024 nik gaffney <nik@fo.am>
@@ -197,6 +197,8 @@
   #:use-module (gnu packages qt)
   #:use-module (gnu packages readline)
   #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages selinux)
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages sqlite)
@@ -218,14 +220,14 @@
 (define-public aide
   (package
     (name "aide")
-    (version "0.19")
+    (version "0.19.1")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://github.com/aide/aide/releases/download/v"
                            version "/aide-" version ".tar.gz"))
        (sha256
-        (base32 "1r55mf4nl6ydb7zwzkz4689j9v9kaabz5gsrcgbrj4p09chs1yz7"))))
+        (base32 "0lhbx7ilwzpfl77vi7b6cklhgzk1iwyfp4fvvgvlmmq30igvzy3d"))))
     (build-system gnu-build-system)
     (arguments
      (list #:configure-flags #~(list "--with-posix-acl"
@@ -580,14 +582,14 @@ interface and is based on GNU Guile.")
 (define-public shepherd-1.0
   (package
     (inherit shepherd-0.10)
-    (version "1.0.5")
+    (version "1.0.6")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://gnu/shepherd/shepherd-"
                                   version ".tar.gz"))
               (sha256
                (base32
-                "1y05d345s07xgbsdnsx0qxv4shksbfmvp9g5j6202j9bl1lm0irw"))))
+                "0cxyf50s7zzszi591f2974r2x3jkmlwrv0y51xjmwscs97ddyx7w"))))
     (arguments
      (substitute-keyword-arguments (package-arguments shepherd-0.10)
        ((#:configure-flags flags #~'())
@@ -1002,17 +1004,16 @@ or via the @code{facter} Ruby library.")
           (base32 "0ldb7a13b9v876c6cbrs78pkizj64drnqx95z5shfbwgpwfhr4im"))))
       (build-system gnu-build-system)
       (arguments
-       `(#:tests? #f      ; no tests
-         #:make-flags
-         (list (string-append "CC=" ,(cc-for-target)))
-         #:phases
-         (modify-phases %standard-phases
-           (delete 'configure)
-           (replace 'install
-             (lambda* (#:key outputs #:allow-other-keys)
-               (let* ((out (assoc-ref outputs "out"))
-                      (bin (string-append out "/bin")))
-                 (install-file "ttyload" bin)))))))
+       (list #:tests? #f      ; no tests
+             #:make-flags
+             #~(list (string-append "CC=" #$(cc-for-target)))
+             #:phases
+             #~(modify-phases %standard-phases
+                 (delete 'configure)
+                 (replace 'install
+                   (lambda _
+                     (let ((bin (string-append #$output "/bin")))
+                       (install-file "ttyload" bin)))))))
       (home-page "https://www.daveltd.com/src/util/ttyload/")
       (synopsis "Console based color-coded graphs of CPU load average")
       (description
@@ -1024,7 +1025,7 @@ console.")
 (define-public btop
   (package
     (name "btop")
-    (version "1.4.3")
+    (version "1.4.4")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1033,13 +1034,14 @@ console.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "10g4m14cniw4blnazw0rs92fkgxhhri8zcvg3kcz2xgnc4day7g3"))))
+                "1b918b86sw265kxg99d140z9qxrgv7qw461lnm843v89xj6m8zz0"))))
     (build-system gnu-build-system)
     (native-inputs (list lowdown))
     (arguments
      (list #:tests? #f ;no test suite
            #:make-flags #~(list (string-append "PREFIX=" #$output)
-                                (string-append "CC=" #$(cc-for-target)))
+                                (string-append "CC=" #$(cc-for-target))
+                                (string-append "CXX=" #$(cxx-for-target)))
            #:phases #~(modify-phases %standard-phases
                         (delete 'configure))))
     (home-page "https://github.com/aristocratos/btop")
@@ -1390,38 +1392,31 @@ login, passwd, su, groupadd, and useradd.")
                "05yxrp44ky2kg6qknk1ih0kvwkgbn9fbz77r3vci7agslh5wjm8g"))))
     (build-system gnu-build-system)
     (arguments
-     `(#:phases
-       (modify-phases %standard-phases
-         (replace 'configure
-           (lambda* (#:key inputs outputs target #:allow-other-keys)
-             (let* ((out    (assoc-ref outputs "out"))
-                    (man8   (string-append out "/share/man/man8"))
-                    (sbin   (string-append out "/sbin"))
-                    (shadow (assoc-ref inputs "shadow"))
-                    (login  (string-append shadow "/bin/login")))
-               (substitute* "Makefile"
-                 ,@(if (%current-target-system)
-                       '((("CC=.*$")
-                          (string-append "CC=" target "-gcc\n")))
-                       '())
-                 (("^SBINDIR.*")
-                  (string-append "SBINDIR = " out
-                                 "/sbin\n"))
-                 (("^MANDIR.*")
-                  (string-append "MANDIR = " out
-                                 "/share/man/man8\n")))
+     (list
+      #:tests? #f    ; no tests
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'configure
+            (lambda* (#:key inputs #:allow-other-keys)
+              (let* ((man8   (string-append #$output "/share/man/man8"))
+                     (sbin   (string-append #$output "/sbin"))
+                     (login  (search-input-file inputs "/bin/login")))
+                (substitute* "Makefile"
+                  (("CC=.*$")
+                   (string-append "CC=" #$(cc-for-target) "\n"))
+                  (("^SBINDIR.*")
+                   (string-append "SBINDIR = " #$output "/sbin\n"))
+                  (("^MANDIR.*")
+                   (string-append "MANDIR = " #$output "/share/man/man8\n")))
 
-               ;; Pick the right 'login' by default.
-               (substitute* "mingetty.c"
-                 (("\"/bin/login\"")
-                  (string-append "\"" login "\"")))
+                ;; Pick the right 'login' by default.
+                (substitute* "mingetty.c"
+                  (("\"/bin/login\"")
+                   (string-append "\"" login "\"")))
 
-               (mkdir-p sbin)
-               (mkdir-p man8))
-             #t)))
-       #:tests? #f))                              ; no tests
+                (mkdir-p sbin)
+                (mkdir-p man8)))))))
     (inputs (list shadow))
-
     (home-page "https://sourceforge.net/projects/mingetty")
     (synopsis "Getty for the text console")
     (description
@@ -1917,7 +1912,7 @@ maintenance releases.")
 (define-public dhcpcd
   (package
     (name "dhcpcd")
-    (version "10.2.2")
+    (version "10.2.3")
     (source
      (origin
        (method git-fetch)
@@ -1926,7 +1921,7 @@ maintenance releases.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1s8m0ldrj7lwkbic4fvg7kcq7sll2lh4fivzv7xz9n2vgh3wrx1h"))))
+        (base32 "01bqs71s2gixsir1cpnk6sm4k9dpdkrgp1r8cpbac50d6hwlxln3"))))
     (inputs (list bash-minimal coreutils-minimal eudev sed))
     (build-system gnu-build-system)
     (arguments
@@ -2376,7 +2371,7 @@ system administrator.")
 (define-public sudo
   (package
     (name "sudo")
-    (version "1.9.16")
+    (version "1.9.17p1")
     (source (origin
               (method url-fetch)
               (uri
@@ -2386,7 +2381,7 @@ system administrator.")
                                     version ".tar.gz")))
               (sha256
                (base32
-                "0gd0pyycc3jnbgq5f8056fyc4a1ix257j2rxazy35dq6gxwlvn60"))
+                "0cjx8lkwlqz03psnaia07rz9mpyn5ilpixvqi9rrf8872ykpwq7z"))
               (modules '((guix build utils)))
               (snippet
                '(begin
@@ -2779,43 +2774,6 @@ authentication server.")
     ;; Same license as wpa_supplicant.
     (license license:bsd-3)))
 
-(define-public wakelan
-  (package
-    (name "wakelan")
-    (version "1.1")
-    (source (origin
-              (method url-fetch)
-              (uri (string-append
-                    "ftp://ftp.gwdg.de/pub/linux/metalab/system/network/misc/wakelan-"
-                    version ".tar.gz"))
-              (sha256
-               (base32
-                "0vydqpf44146ir6k87gmqaq6xy66xhc1gkr3nsd7jj3nhy7ypx9x"))))
-    (build-system gnu-build-system)
-    (arguments
-     '(#:phases
-       (modify-phases %standard-phases
-         (replace 'configure
-           (lambda* (#:key outputs #:allow-other-keys)
-             (let ((out (assoc-ref outputs "out")))
-               (mkdir-p (string-append out "/bin"))
-               (mkdir-p (string-append out "/share/man/man1"))
-
-               ;; It's an old configure script that doesn't understand
-               ;; the extra options we pass.
-               (setenv "CONFIG_SHELL" (which "bash"))
-               (invoke "./configure"
-                       (string-append "--prefix=" out)
-                       (string-append "--mandir=" out
-                                      "/share/man"))))))
-       #:tests? #f))
-    (home-page "https://www.kernel.org") ; really, no home page
-    (synopsis "Send a wake-on-LAN packet")
-    (description
-     "WakeLan broadcasts a properly formatted UDP packet across the local area
-network, which causes enabled computers to power on.")
-    (license license:gpl2+)))
-
 (define-public dmidecode
   (package
     (name "dmidecode")
@@ -2891,16 +2849,24 @@ development, not the kernel implementation of ACPI.")
 (define-public s-tui
   (package
     (name "s-tui")
-    (version "1.1.6")
+    (version "1.2.0")
     (source
      (origin
-       (method url-fetch)
-       (uri (pypi-uri "s-tui" version))
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/amanusk/s-tui")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
        (sha256
-        (base32 "0mvvqg0pr8k0cy0mbvi25yqm6zsf8mipdbq97xjqfvifryf6j9wx"))))
-    (build-system python-build-system)
+        (base32 "08mfclgdy6cb8xgp8sc7fpm4qxay37j71b1b3niywi6x206i5m2m"))))
+    (build-system pyproject-build-system)
+    (native-inputs
+     (list python-pytest
+           python-setuptools
+           python-wheel))
     (inputs
-     (list python-psutil python-urwid))
+     (list python-psutil-7
+           python-urwid-3))
     (home-page "https://github.com/amanusk/s-tui")
     (synopsis "Interactive terminal stress test and monitoring tool")
     (description
@@ -2918,7 +2884,16 @@ utilization, temperature and power.")
                                   version ".orig.tar.gz"))
               (sha256
                (base32
-                "1cg0mklfrwfyzwqkzidd0151r8n2jgbiiqz1v0p3w4q62mkmdand"))))
+                "1cg0mklfrwfyzwqkzidd0151r8n2jgbiiqz1v0p3w4q62mkmdand"))
+              (modules '((guix build utils)))
+              (snippet
+               #~(begin
+                   ;; The build fails with "implicit declaration of function
+                   ;; 'rpl_malloc'; did you mean 'realloc'?" when building
+                   ;; for RISCV64 target if "AC_FUNC_MALLOC" macro is present.
+                   ;; Remove it.
+                   (substitute* "configure.ac"
+                     (("AC_FUNC_MALLOC") ""))))))
     (build-system gnu-build-system)
     (native-inputs
      (list autoconf automake))
@@ -3773,14 +3748,14 @@ rules is done with the @code{auditctl} utility.")
 (define-public nmap
   (package
     (name "nmap")
-    (version "7.96")
+    (version "7.97")
     (source (origin
               (method url-fetch)
               (uri (string-append "https://nmap.org/dist/nmap-" version
                                   ".tar.bz2"))
               (sha256
                (base32
-                "12lcvyzfl1hblbklcss44dr92fr86w0z1y1a90yilv5n5x7pmblq"))
+                "1h252sz1cqr0r440s7pxn9wwn1jffbrdvacnvmbw4w664mwz565g"))
               (modules '((guix build utils)))
               (snippet
                '(begin
@@ -3932,10 +3907,10 @@ throughput (in the same interval).")
        (uri (git-reference
              (url "https://github.com/scottchiefbaker/dool")
              (commit (string-append "v" version))))
-       (file-name (git-file-name "dool" version))
+       (file-name (git-file-name name version))
        (sha256
         (base32 "11myxg4y4z0nr60cg0xi3r4akjypyjjg1mxbc4y2a6lg0pras9bv"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
     (arguments
      (list
       #:phases
@@ -3982,26 +3957,31 @@ plug-in architecture to allow monitoring other system metrics.")
         (base32 "18ipa1bm6q1n5drbi8i65726hhqhl1g41390lfqrc11hkbvv443d"))
        (patches (search-patches "thefuck-test-environ.patch"
                                 "thefuck-remove-broken-tests.patch"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
     (arguments
-     '(#:phases
-       (modify-phases %standard-phases
-         (delete 'check)
-         (add-after 'install 'check
-           (lambda* (#:key inputs outputs #:allow-other-keys)
-             ;; Tests look for installed package
-             (add-installed-pythonpath inputs outputs)
-             ;; Some tests need write access to $HOME.
-             (setenv "HOME" "/tmp")
-             ;; Even with that, this function tries to mkdir /.config.
-             (substitute* "tests/test_utils.py"
-               (("settings\\.init\\(\\)") ""))
-             (invoke "py.test" "-v"))))))
-    (propagated-inputs
-     (list python-colorama python-decorator python-psutil python-pyte
-           python-six))
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'check 'pre-check
+            (lambda _
+              ;; Tests look for installed package
+              ;; Some tests need write access to $HOME.
+              (setenv "HOME" "/tmp")
+              ;; Even with that, this function tries to mkdir /.config.
+              (substitute* "tests/test_utils.py"
+                (("settings\\.init\\(\\)") "")))))))
     (native-inputs
-     (list go python-mock python-pytest python-pytest-mock))
+     (list go
+           python-mock
+           python-pytest
+           python-pytest-mock
+           python-setuptools
+           python-wheel))
+    (inputs
+     (list python-colorama
+           python-decorator
+           python-psutil
+           python-pyte))
     (home-page "https://github.com/nvbn/thefuck")
     (synopsis "Correct mistyped console command")
     (description
@@ -4304,31 +4284,33 @@ in order to be able to find it.
        (file-name (git-file-name name version))
        (sha256
         (base32 "0sy26d60j89fw4z2bfvc7zblb7r1ras5q7f06gaqfg2058z5wj8m"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
     (arguments
-     (list #:tests? #f                      ; no tests
-           #:phases
-           #~(modify-phases %standard-phases
-               (add-after 'unpack 'patch-sed-in
-                 (lambda _
-                   (substitute* "sedsed.py"
-                     (("sedbin = 'sed'")
-                      (string-append "sedbin = '" (which "sed") "'")))))
-               (delete 'build)
-               (replace 'install
-                 (lambda* (#:key outputs #:allow-other-keys)
-                   (let* ((out (assoc-ref outputs "out"))
-                          (bin (string-append out "/bin")))
-                     ;; Just one file to copy around
-                     (install-file "sedsed.py" bin))))
-               (add-after 'wrap 'symlink
-                 ;; Create 'sedsed' symlink to "sedsed.py".
-                 (lambda* (#:key outputs #:allow-other-keys)
-                   (let* ((out (assoc-ref outputs "out"))
-                          (bin (string-append out "/bin"))
-                          (sed (string-append bin "/sedsed"))
-                          (sedpy (string-append bin "/sedsed.py")))
-                     (symlink sedpy sed)))))))
+     (list
+      #:tests? #f ; XXX: test suit requires git set up, run by "./test/run"
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'patch-sed-in
+            (lambda _
+              (substitute* "sedsed.py"
+                (("sedbin = 'sed'")
+                 (string-append "sedbin = '" (which "sed") "'")))))
+          (delete 'build)
+          (replace 'install
+            (lambda _
+              (let ((bin (string-append #$output "/bin")))
+                ;; Just one file to copy around
+                (install-file "sedsed.py" bin))))
+          (add-after 'wrap 'symlink
+            ;; Create 'sedsed' symlink to "sedsed.py".
+            (lambda _
+              (let* ((bin (string-append #$output "/bin"))
+                     (sed (string-append bin "/sedsed"))
+                     (sedpy (string-append bin "/sedsed.py")))
+                (symlink sedpy sed)))))))
+    (native-inputs
+     (list python-setuptools
+           python-wheel))
     (home-page "https://aurelio.net/projects/sedsed")
     (synopsis "Sed sed scripts")
     (description
@@ -4439,11 +4421,14 @@ you are running, what theme or icon set you are using, etc.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32
-         "02bc6dhwvf1daqlsw3am9y2wjfkhs8lpw3vgdxw74jg0w9bpzg8q"))))
-    (build-system python-build-system)
-    (arguments (list #:tests? #f))      ;no tests
-    (inputs (list python-typing-extensions))
+        (base32 "02bc6dhwvf1daqlsw3am9y2wjfkhs8lpw3vgdxw74jg0w9bpzg8q"))))
+    (build-system pyproject-build-system)
+    (native-inputs
+     (list python-pytest
+           python-setuptools
+           python-wheel))
+    (inputs
+     (list python-typing-extensions))
     (home-page "https://github.com/hykilpikonna/HyFetch")
     (synopsis "@code{neofetch} with pride flags <3")
     (description "HyFetch is a command-line system information tool fork of
@@ -4647,7 +4632,7 @@ information tool.")
 (define-public fastfetch
   (package
     (name "fastfetch")
-    (version "2.42.0")
+    (version "2.46.0")
     (source
      (origin
        (method git-fetch)
@@ -4656,7 +4641,7 @@ information tool.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "09chw9rx4rqgd0f0am3ygm5a4lg1i0rsmxbw0kv3cfj1zgfmcn4y"))
+        (base32 "1gqhi1z4c7cwapn7l23zw0a3ldwkacm3qm68p9a0lw6lavgcc441"))
        (modules '((guix build utils)))
        (snippet '(begin
                    (delete-file-recursively "src/3rdparty")))))
@@ -5405,23 +5390,28 @@ file-types for easier parsing in scripts.")
 (define-public jtbl
   (package
     (name "jtbl")
-    (version "1.1.7")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://github.com/kellyjonbrazil/jtbl")
-                    (commit (string-append "v" version))))
-              (file-name (git-file-name name version))
-              (sha256
-               (base32
-                "19i21fqz2m40cds9pb17brjxkczqagmx2f7mfb0xdvbygaply5wz"))))
-    (build-system python-build-system)
+    (version "1.6.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/kellyjonbrazil/jtbl")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1gryjfjchvfb2nv797h5ba2qz54ig5kkjwcq8ycfdffdk1931d10"))))
+    (build-system pyproject-build-system)
+    (native-inputs
+     (list python-pytest
+           python-setuptools
+           python-wheel))
     (inputs
      (list python-tabulate))
     (home-page "https://github.com/kellyjonbrazil/jtbl")
     (synopsis "Command-line tool to print JSON data as a table in the terminal")
-    (description "@code{jtbl} accepts piped JSON data from stdin and outputs a
-text table representation to stdout.")
+    (description
+     "@code{jtbl} accepts piped JSON data from stdin and outputs a text table
+representation to stdout.")
     (license license:expat)))
 
 (define-public hosts
@@ -5502,7 +5492,7 @@ entries, providing commands to add, remove, comment, and search.")
 (define-public nmrpflash
   (package
     (name "nmrpflash")
-    (version "0.9.21")
+    (version "0.9.25")
     (source
      (origin
        (method git-fetch)
@@ -5511,7 +5501,7 @@ entries, providing commands to add, remove, comment, and search.")
          (url "https://github.com/jclehner/nmrpflash")
          (commit (string-append "v" version))))
        (sha256
-        (base32 "183nvxqdn8klin5f14f4cv9vjymj0izy0qmj1l76igmlcq7ravwx"))
+        (base32 "0xqvj52m6rk0gma8saqvp8b4jms9hca8i1v2kb5hcd6miaqgx276"))
        (file-name (git-file-name name version))))
     (build-system gnu-build-system)
     (arguments
@@ -5875,7 +5865,7 @@ exit code reports successful or failed execution to
 (define-public udpcast
   (package
     (name "udpcast")
-    (version "20211207")
+    (version "20250223")
     (source
      (origin
        (method url-fetch)
@@ -5888,11 +5878,13 @@ exit code reports successful or failed execution to
                    "https://www.udpcast.linux.lu/download/udpcast-"
                    version ".tar.gz")))
        (sha256
-        (base32 "0l6hck694szrrvz85nm48rwb7mzvg2z2bwa50v51pkvym3kvxkm3"))))
+        (base32 "19qa6yp0svhvyra4898c6kjs56bn7yr9cavxk1vbrqbpr1a7bzff"))))
     (build-system gnu-build-system)
     (native-inputs
      (list autoconf automake m4 perl))
-    (arguments `(#:tests? #f))                    ;no test suite
+    (arguments
+     (list #:tests? #f                    ;no test suite
+           #:make-flags #~(list (string-append "sbindir=" #$output "/sbin/"))))
     (synopsis "Multicast file transfer tool")
     (description
      "UDPcast is a file transfer tool that can send data simultaneously to
@@ -6694,14 +6686,14 @@ versions of @command{find}, including POSIX, GNU, and *BSD find.")
 (define-public rdfind
   (package
     (name "rdfind")
-    (version "1.6.0")
+    (version "1.7.0")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://rdfind.pauldreik.se/" name "-" version
                            ".tar.gz"))
        (sha256
-        (base32 "0y9j1w3nbgjks0k4kgm6qq92yrwgv66n212ncmlmhsl8y676wh3s"))))
+        (base32 "0afzwhmzlzhzzckd9iwkbx6grrzm5p4vk0zbpz8lz7hx5qan7i3q"))))
     (build-system gnu-build-system)
     (native-inputs (list which))
     (inputs (list nettle))
@@ -6710,10 +6702,15 @@ versions of @command{find}, including POSIX, GNU, and *BSD find.")
       #:phases #~(modify-phases %standard-phases
                    (add-before 'check 'patch-tests
                      (lambda _
-                       (display (which "echo"))
+                       (substitute* (list "testcases/hardlink_fails.sh"
+                                          "testcases/symlinking_action.sh")
+                         (("\"/bin/sh -c\"")
+                          (format #f
+                                  "\"~a -c\""
+                                  (search-input-file %build-inputs "/bin/sh"))))
                        (substitute* "testcases/common_funcs.sh"
                          (("/bin/echo")
-                          (which "echo"))))))))
+                          (search-input-file %build-inputs "/bin/echo"))))))))
     (home-page "https://rdfind.pauldreik.se")
     (synopsis "Find duplicate files")
     (description
@@ -6738,6 +6735,16 @@ backup directories or just finding duplicate files.")
     (build-system gnu-build-system)
     (native-inputs
      (list autoconf automake bison flex python-docutils))
+    (arguments
+     (list #:phases
+           #~(modify-phases %standard-phases
+               ;; patch sshguard to find configuration through
+               ;; environment variable
+               (add-after 'unpack 'patch-sshguard
+                 (lambda _
+                   (substitute* "src/sshguard.in"
+                     (("^config=.*$")
+                      "config=${SSHGUARD_CONFIG_FILE:-@sysconfdir@/sshguard.conf}\n")))))))
     (home-page "https://sshguard.net/")
     (synopsis "Daemon to blocks SSH brute-force attacks")
     (description
@@ -6749,82 +6756,121 @@ several firewall backends.")
 (define-public px
   (package
     (name "px")
-    (version "3.6.9")
+    (version "3.6.12")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/walles/px")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "06jg6izya1k5gk71pygv8691fcaa6zfnzns57fjknnihz3c42pzw"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:test-flags
+      ;; Tests requiring networking setup or root access.
+      #~(list "-k" (string-join
+                    (list "not test_get_all_defaultlocale"
+                          "test_get_all_swedish"
+                          "test_match"
+                          "test_ps_line_to_process_1"
+                          "test_ps_line_to_process_2"
+                          "test_ps_line_to_process_unicode"
+                          "test_stdfds_ipc_and_network"
+                          "test_str_resolve"
+                          "test_to_screen_lines_unbounded"
+                          "test_to_screen_lines_unicode")
+                    " and not "))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'patch-git
+            (lambda* (#:key inputs #:allow-other-keys)
+              (substitute* (find-files "px" "\\.py$")
+                ;; We don't have MacOS X programs.
+                (("px_exec_util[.]run[(]\\[\"(vm_stat)\"" all x)
+                 (string-append "px_exec_util.run([\""
+                                "/bin/false"
+                                "\""))
+                ;; Patch names of executables in "sbin".
+                (("px_exec_util[.]run[(]\\[\"(sysctl)\"" all x)
+                 (string-append "px_exec_util.run([\""
+                                (search-input-file inputs
+                                                   (string-append "sbin/" x))
+                                "\""))
+                ;; Patch names of executables in "bin".
+                (("px_exec_util[.]run[(]\\[\"([^/\"]*)\"" all x)
+                 (string-append "px_exec_util.run([\""
+                                (search-input-file inputs
+                                                   (string-append "bin/" x))
+                                "\"")))
+              (substitute* "px/px_process.py"
+                ;; Patch path name of "ps" executable.
+                (("\"/bin/ps\"") (string-append "\""
+                                                (assoc-ref inputs "procps")
+                                                "/bin/ps\"")))
+              (substitute* "setup.py"
+                ;; Patch "git describe", replacing it by its result.
+                (("\\[\"git\", \"describe\", \"--dirty\"\\]")
+                 (string-append "[\"echo\", \"" #$version "\"]"))))))))
+    (native-inputs
+     (list pkg-config
+           python-setuptools
+           python-wheel
+           python-pytest
+           python-dateutil))
+    (inputs
+     (list lsof
+           net-tools
+           procps
+           sysstat
+           util-linux))
+    (home-page "https://github.com/walles/px")
+    (synopsis "Alternative to @command{ps}, @command{top} and @command{pstree}")
+    (description
+     "This package provides a way to figure out which processes communicate
+with which other processes.  It provides more usable versions of @command{ps},
+@command{top} and @command{pstree}.")
+    (license license:expat)))
+
+(define-public wakelan
+  (package
+    (name "wakelan")
+    (version "1.1")
     (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                     (url "https://github.com/walles/px.git")
-                     (commit version)))
-              (file-name (git-file-name name version))
+              (method url-fetch)
+              (uri (string-append
+                    "ftp://ftp.gwdg.de/pub/linux/metalab/system/network/misc/wakelan-"
+                    version ".tar.gz"))
               (sha256
                (base32
-                "0kqwi1qb6hvk4si1dynz4q56lxy5161b50fgsvlfk9dnb6gwln6i"))))
-    (build-system python-build-system)
+                "0vydqpf44146ir6k87gmqaq6xy66xhc1gkr3nsd7jj3nhy7ypx9x"))))
+    (build-system gnu-build-system)
     (arguments
-     (list #:phases
-           #~(modify-phases %standard-phases
-               (add-after 'unpack 'patch-git
-                 (lambda* (#:key inputs #:allow-other-keys)
-                   (substitute* (find-files "px" "\\.py$")
-                    ;; We don't have MacOS X programs.
-                    (("px_exec_util[.]run[(]\\[\"(vm_stat)\"" all x)
-                     (string-append "px_exec_util.run([\""
-                                    "/bin/false"
-                                    "\""))
-                    ;; Patch names of executables in "sbin".
-                    (("px_exec_util[.]run[(]\\[\"(sysctl)\"" all x)
-                     (string-append "px_exec_util.run([\""
-                                    (search-input-file inputs
-                                                       (string-append "sbin/" x))
-                                    "\""))
-                    ;; Patch names of executables in "bin".
-                    (("px_exec_util[.]run[(]\\[\"([^/\"]*)\"" all x)
-                     (string-append "px_exec_util.run([\""
-                                    (search-input-file inputs
-                                                       (string-append "bin/" x))
-                                    "\"")))
-                   (substitute* "px/px_process.py"
-                    ;; Patch path name of "ps" executable.
-                    (("\"/bin/ps\"") (string-append "\""
-                                                    (assoc-ref inputs "procps")
-                                                    "/bin/ps\"")))
-                   (substitute* "setup.py"
-                    ;; Patch "git describe", replacing it by its result.
-                    (("\\[\"git\", \"describe\", \"--dirty\"\\]")
-                     (string-append "[\"echo\", \"" #$version "\"]")))))
-               (add-before 'check 'prepare-check
-                 (lambda _
-                   (substitute* "tests/px_terminal_test.py"
-                    ;; We don't have /etc/passwd so the output will not say "root".
-                    (("root") "0   "))
-                   (substitute* "tests/px_process_test.py"
-                    ;; Our containers don't have the kernel visible.
-                    (("len[(]all_processes[)] >= 4")
-                     "len(all_processes) >= 3")
-                    ;; We don't have /etc/passwd so the output will not say "root".
-                    (("\"root\"") "\"0\""))
-                   (setenv "PYTEST_ADDOPTS"
-                           (string-append "-vv -k \"not "
-                                          (string-join
-                                           '(;; Network tests cannot succeed.
-                                             "test_stdfds_ipc_and_network"
-                                             ;; Network tests cannot succeed.
-                                             "test_str_resolve"
-                                             ;; Tiny difference in color.
-                                             "test_to_screen_lines_unbounded")
-                                           " and not ")
-                                          "\"")))))))
-    (native-inputs
-     (list pkg-config python-setuptools python-wheel python-pytest
-           python-pytest-runner python-dateutil))
-    (inputs
-     (list lsof net-tools procps sysstat util-linux))
-    (synopsis "ps, top and pstree for human beings")
-    (description "This package provides a way to figure out which processes
-communicate with which other processes.  It provides more usable versions
-of ps, top and pstree.")
-    (home-page "https://github.com/walles/px")
-    (license license:expat)))
+     (list
+      #:tests? #f
+      #:phases
+      #~(modify-phases %standard-phases
+         (replace 'configure
+           (lambda* (#:key inputs #:allow-other-keys)
+             (mkdir-p (string-append #$output "/bin"))
+             (mkdir-p (string-append #$output "/share/man/man1"))
+
+             ;; It's an old configure script that doesn't understand
+             ;; the extra options we pass.
+             (setenv "CONFIG_SHELL"
+                     (search-input-file %build-inputs "bin/bash"))
+             (invoke "./configure"
+                     (string-append "--prefix=" #$output)
+                     (string-append "--mandir=" #$output
+                                    "/share/man")))))))
+    (home-page "https://www.kernel.org") ; really, no home page
+    (synopsis "Send a wake-on-LAN packet")
+    (description
+     "WakeLan broadcasts a properly formatted UDP packet across the local area
+network, which causes enabled computers to power on.")
+    (license license:gpl2+)))
 
 (define-public xfel
   (package

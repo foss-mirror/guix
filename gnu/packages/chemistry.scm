@@ -24,12 +24,16 @@
 ;;; along with GNU Guix.  If not, see <http://www.gnu.org/licenses/>.
 
 (define-module (gnu packages chemistry)
-  #:use-module (guix packages)
-  #:use-module (guix utils)
   #:use-module ((guix licenses) #:prefix license:)
+  #:use-module (guix build-system cmake)
+  #:use-module (guix build-system gnu)
+  #:use-module (guix build-system pyproject)
+  #:use-module (guix build-system python)
   #:use-module (guix download)
   #:use-module (guix gexp)
   #:use-module (guix git-download)
+  #:use-module (guix packages)
+  #:use-module (guix utils)
   #:use-module (gnu packages)
   #:use-module (gnu packages algebra)
   #:use-module (gnu packages autotools)
@@ -37,26 +41,30 @@
   #:use-module (gnu packages base)
   #:use-module (gnu packages bison)
   #:use-module (gnu packages boost)
-  #:use-module (gnu packages check)
-  #:use-module (gnu packages compression)
   #:use-module (gnu packages c)
+  #:use-module (gnu packages check)
+  #:use-module (gnu packages cmake)
+  #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
   #:use-module (gnu packages documentation)
   #:use-module (gnu packages flex)
   #:use-module (gnu packages fonts)
   #:use-module (gnu packages fontutils)
+  #:use-module (gnu packages fortran-xyz)
   #:use-module (gnu packages gcc)
   #:use-module (gnu packages gl)
   #:use-module (gnu packages graphviz)
   #:use-module (gnu packages gtk)
   #:use-module (gnu packages gv)
   #:use-module (gnu packages image)
+  #:use-module (gnu packages lisp)
   #:use-module (gnu packages maths)
   #:use-module (gnu packages mpi)
   #:use-module (gnu packages perl)
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages python)
   #:use-module (gnu packages python-build)
+  #:use-module (gnu packages python-science)
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
   #:use-module (gnu packages serialization)
@@ -66,14 +74,16 @@
   #:use-module (gnu packages tex)
   #:use-module (gnu packages web)
   #:use-module (gnu packages xml)
-  #:use-module (guix build-system cmake)
-  #:use-module (guix build-system gnu)
-  #:use-module (guix build-system python))
+  #:use-module (srfi srfi-1))
 
+;;; Please: Try to add new module packages in alphabetic order.
+;;;
+;;; Code:
+
 (define-public avogadrolibs
   (package
     (name "avogadrolibs")
-    (version "1.93.0")
+    (version "1.100.0")
     (source
      (origin
        (method git-fetch)
@@ -81,7 +91,7 @@
              (url "https://github.com/OpenChemistry/avogadrolibs")
              (commit version)))
        (sha256
-        (base32 "1xivga626n5acnmwmym8svl0pdri8hkp59czf04ri2zflnviyh39"))
+        (base32 "1l9bp3ba8yx9mk2in5v375jzi1w4y7l1xl37xqv869810drgjffc"))
        (file-name (git-file-name name version))))
     (build-system cmake-build-system)
     (native-inputs
@@ -91,18 +101,61 @@
            pkg-config
            pybind11))
     (inputs
-     (list glew
-           libarchive
-           libmsym
-           molequeue
-           python
-           spglib
-           qtbase-5))
+      `(("glew" ,glew)
+        ("libarchive" ,libarchive)
+        ("libmsym" ,libmsym)
+        ("molequeue" ,molequeue)
+        ("python" ,python)
+        ("spglib" ,spglib)
+        ("qtbase-5" ,qtbase-5)
+        ("qtsvg-5" ,qtsvg-5)
+        ("avogadro-molecules"
+          ,(origin
+            (method git-fetch)
+            (uri
+              (git-reference
+                (url "https://github.com/openchemistry/molecules")
+                (commit "8a37883")))
+            (file-name (git-file-name name version))
+            (sha256
+              (base32
+                "00mfx0bwmqazbiklrvaijjd5n4wa5lp3z73291ihm78q0v9dzhl4"))))
+        ("avogadro-crystals"
+          ,(origin
+            (method git-fetch)
+            (uri
+              (git-reference
+                (url "https://github.com/openchemistry/crystals")
+                (commit "28404bd")))
+            (file-name (git-file-name name version))
+            (sha256
+              (base32
+                "0kcz99q5nfl2v2qmm9cqnbb2c2qqzw79vsnv557i7x64bxsxrw1m"))))
+        ("avogadro-fragments"
+          ,(origin
+            (method git-fetch)
+            (uri
+              (git-reference
+                (url "https://github.com/openchemistry/fragments")
+                (commit "c4943b5")))
+            (file-name (git-file-name name version))
+            (sha256
+              (base32
+                "17l6qmkc25wb0nvic708l25fxiy89b3vfs0x5d40qcnn27bid32n"))))))
     (arguments
-     '(#:configure-flags (list "-DENABLE_TESTING=ON"
-                               (string-append "-DSPGLIB_INCLUDE_DIR="
-                                              (assoc-ref %build-inputs "spglib")
-                                              "/include"))))
+     (list
+      #:configure-flags #~(list "-DENABLE_TESTING=ON")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'symlink
+            (lambda _
+              (begin
+                (symlink (assoc-ref %build-inputs "avogadro-molecules")
+                         "../molecules")
+                (symlink (assoc-ref %build-inputs "avogadro-crystals")
+                         "../crystals")
+                (symlink (assoc-ref %build-inputs "avogadro-fragments")
+                         "../fragments")))))))
     (home-page "https://www.openchemistry.org/projects/avogadro2/")
     (synopsis "Libraries for chemistry, bioinformatics, and related areas")
     (description
@@ -114,7 +167,7 @@ bioinformatics, materials science, and related areas.")
 (define-public avogadro2
   (package
     (name "avogadro2")
-    (version "1.93.0")
+    (version "1.100.0")
     (source
      (origin
        (method git-fetch)
@@ -122,17 +175,47 @@ bioinformatics, materials science, and related areas.")
              (url "https://github.com/OpenChemistry/avogadroapp")
              (commit version)))
        (sha256
-        (base32
-         "1z3pjlwja778a1dmvx9aqz2hlw5q9g3kqxhm9slz08452600jsv7"))
+        (base32 "19cd5aqvcw6xj0x1kmzmxl0vrnbhk5ymnl9p2p4d9504ma5k6aim"))
        (file-name (git-file-name name version))))
     (build-system cmake-build-system)
     (native-inputs
-     (list eigen pkg-config))
-    (inputs
-     (list avogadrolibs hdf5 molequeue qtbase-5))
+      `(("eigen" ,eigen)
+        ("pkg-config" ,pkg-config)
+        ("avogadro-i18n"
+         ,(origin
+           (method git-fetch)
+           (uri
+             (git-reference
+               (url "https://github.com/openchemistry/avogadro-i18n")
+               (commit "07bee85")))
+           (file-name (git-file-name name
+                                     version))
+           (sha256
+             (base32
+               "1vhjh0gilmm90269isrkvyzwwh1cj3bwcxls394psadw1a89mk14"))))))
+    (inputs (list avogadrolibs hdf5 molequeue openbabel qtbase-5 qtsvg-5))
     ;; TODO: Enable tests with "-DENABLE_TESTING" configure flag.
     (arguments
-     '(#:tests? #f))
+     (list
+      #:tests? #f
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'symlink
+            (lambda _
+              (begin
+                (symlink (assoc-ref %build-inputs "avogadro-i18n")
+                         "../avogadro-i18n"))))
+          (add-after 'install 'wrap-program
+            (lambda _
+              (wrap-program (string-append #$output "/bin/avogadro2")
+                (list
+                  "PATH"
+                  'suffix
+                  (list (string-append #$openbabel "/bin")))
+                (list
+                  "QT_PLUGIN_PATH"
+                  'suffix
+                  (list (string-append #$qtsvg-5 "/lib/qt5/plugins")))))))))
     (home-page "https://www.openchemistry.org/projects/avogadro2/")
     (synopsis "Advanced molecule editor")
     (description
@@ -215,6 +298,63 @@ unique to the compound they describe and can encode absolute stereochemistry
 making chemicals and chemistry machine-readable and discoverable.  A simple
 analogy is that InChI is the bar-code for chemistry and chemical structures.")
     (license license:expat)))
+
+(define-public libcint
+  (package
+    (name "libcint")
+    (version "6.1.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+              (url "https://github.com/sunqm/libcint")
+              (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1vlzgkgdhf94w3l1nk9rswf50sqbw4l9981hmnivgwwv905mq4ji"))
+       (modules '((guix build utils)))
+       (snippet
+        '(begin
+           ;; Autogenerated code
+           (delete-file-recursively "src/autocode")
+           (delete-file "doc/program_ref.pdf")))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list "-DWITH_RANGE_COULOMB=1"
+              "-DWITH_CINT2_INTERFACE=1"
+              "-DMIN_EXPCUTOFF=20"
+              "-DQUICK_TEST=ON"
+              "-DENABLE_TEST=ON")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'autogenerate-integrals
+            (lambda _
+              (mkdir "src/autocode")
+              (with-directory-excursion "scripts"
+                (invoke "clisp" "auto_intor.cl")
+                (for-each
+                 (lambda (file)
+                   (rename-file file (string-append
+                                      "../src/autocode/" (basename file))))
+                 (find-files "." "\\.c$")))))
+          (add-after 'unpack 'adjust-build-path
+            (lambda _
+              (substitute* (find-files "testsuite" "\\.py$")
+                (("\\.\\./\\.\\./build") "../../../build")))))))
+    (native-inputs
+     (list clisp
+           python
+           python-numpy))
+    (inputs
+     (list openblas))
+    (home-page "https://github.com/sunqm/libcint")
+    (synopsis "General GTO integrals for quantum chemistry")
+    (description
+     "@code{libcint} is a C library (also with a Fortran API) to evaluate one-
+and two-electron integrals for @acronym{GTO, Gaussian Type Function}s.")
+    (license license:bsd-2)))
 
 (define-public libmsym
   (package
@@ -477,7 +617,7 @@ materials, biochemistry, or related areas.")
 (define-public spglib
   (package
     (name "spglib")
-    (version "1.16.0")
+    (version "2.5.0")
     (source
      (origin
        (method git-fetch)
@@ -485,26 +625,41 @@ materials, biochemistry, or related areas.")
              (url "https://github.com/spglib/spglib")
              (commit (string-append "v" version))))
        (sha256
-        (base32 "1kzc956m1pnazhz52vspqridlw72wd8x5l3dsilpdxl491aa2nws"))
+        (base32 "0x5igrqwx7r2shysmi9sqcjg4hpb7hba3ddlwg05z6c57a3ifbqc"))
        (file-name (git-file-name name version))))
     (build-system cmake-build-system)
     (arguments
-     '(#:test-target "check"
-       #:phases
-       (modify-phases %standard-phases
-         (add-after 'unpack 'patch-header-install-dir
-           (lambda _
-             ;; As of the writing of this package, CMake and GNU build systems
-             ;; install the header to two different location.  This patch makes
-             ;; the CMake build system's choice of header directory compatible
-             ;; with the GNU build system's choice and with what avogadrolibs
-             ;; expects.
-             ;; See https://github.com/spglib/spglib/issues/75 and the relevant
-             ;; part of https://github.com/OpenChemistry/avogadroapp/issues/97.
-             (substitute* "CMakeLists.txt"
-               (("\\$\\{CMAKE_INSTALL_INCLUDEDIR\\}" include-dir)
-                (string-append include-dir "/spglib")))
-             #t)))))
+     '(#:tests? #f ; tests want to clone a git repository, which won't work
+       #:configure-flags '("-DSPGLIB_WITH_TESTS=OFF")
+       #:phases (modify-phases %standard-phases
+                  (add-before 'configure 'patch-files (lambda _ (substitute* "CMakeLists.txt"
+                      (("include\\(cmake/DynamicVersion.cmake\\)")
+                       "")
+                      (("dynamic_version.*")
+                       "")
+                      (("PROJECT_PREFIX.*")
+                       "")
+                      (("FALLBACK_VERSION.*")
+                       "set (PROJECT_VERSION 2.5.0")
+                      (("\\$\\{PROJECT_VERSION_FULL\\}")
+                       "2.5.0")
+                      (("\\$\\{GIT_COMMIT\\}")
+                       "\"\""))
+                    (substitute* "src/CMakeLists.txt"
+                      ((".*Spglib_GitHash.*")
+                       ""))))
+                  (add-after 'unpack 'patch-header-install-dir
+                    (lambda _
+                      ;; As of the writing of this package, CMake and GNU build systems
+                      ;; install the header to two different location.  This patch makes
+                      ;; the CMake build system's choice of header directory compatible
+                      ;; with the GNU build system's choice and with what avogadrolibs
+                      ;; expects.
+                      ;; See https://github.com/spglib/spglib/issues/75 and the relevant
+                      ;; part of https://github.com/OpenChemistry/avogadroapp/issues/97.
+                      (substitute* "CMakeLists.txt"
+                        (("\\$\\{CMAKE_INSTALL_INCLUDEDIR\\}" include-dir)
+                         (string-append include-dir "/spglib"))))))))
     (home-page "https://spglib.github.io/spglib/index.html")
     (synopsis "Library for crystal symmetry search")
     (description "Spglib is a library for finding and handling crystal
@@ -518,6 +673,36 @@ symmetries written in C.  Spglib can be used to:
 @item Find a primitive cell
 @item Search irreducible k-points
 @end enumerate")
+    (license license:bsd-3)))
+
+(define-public python-geometric
+  (package
+    (name "python-geometric")
+    (version "1.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+              (url "https://github.com/leeping/geomeTRIC")
+              (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0w3c71wvhnc44pfafcjfgqkjimkcdkpjk3bahg9v6l1z8c0cyhfy"))))
+    (build-system pyproject-build-system)
+    (native-inputs
+     (list python-pytest
+           python-setuptools
+           python-wheel))
+    (propagated-inputs
+     (list python-numpy
+           python-scipy
+           python-networkx))
+    (home-page "https://github.com/leeping/geomeTRIC")
+    (synopsis "Geometry optimization of molecular structures")
+    (description
+     "@code{geomeTRIC} is a Python library and program for geometry
+optimization of molecular structures, which works with different external
+quantum chemistry (and molecular mechanics) softwares.")
     (license license:bsd-3)))
 
 (define-public python-pymol
@@ -581,6 +766,210 @@ symmetries written in C.  Spglib can be used to:
 used to prepare publication-quality figures, to share interactive results with
 your colleagues, or to generate pre-rendered animations.")
     (license license:bsd-3)))
+
+(define-public python-pyscf
+  (package
+    (name "python-pyscf")
+    (version "2.9.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+              (url "https://github.com/pyscf/pyscf")
+              (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1lj48c749aqf9zd5xbshjsfr0y972r2nsm8lf3760jbfadg9jdsi"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:modules
+      '((guix build pyproject-build-system)
+        (guix build utils)
+        (ice-9 textual-ports))
+      ;; Some tests take a very long time and libxc support is not enabled.
+      #:tests? #f
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'build 'set-cmake-arguments
+            (lambda _
+              ;; Copied from cmake-build-system. This is passed to 'cmake' in
+              ;; setup.py.
+              (setenv "CMAKE_CONFIGURE_ARGS"
+                      (string-join
+                       `("-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+                         ,(string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
+                         ;; ensure that the libraries are installed into /lib
+                         "-DCMAKE_INSTALL_LIBDIR=lib"
+                         ;; add input libraries to rpath
+                         "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=TRUE"
+                         ;; add (other) libraries of the project itself to rpath
+                         ,(string-append "-DCMAKE_INSTALL_RPATH=" #$output "/lib")
+                         ;; enable verbose output from builds
+                         "-DCMAKE_VERBOSE_MAKEFILE=ON"
+                         "-DENABLE_LIBXC=OFF"
+                         "-DBUILD_LIBXC=OFF"
+                         "-DBUILD_XCFUN=OFF"
+                         "-DBUILD_LIBCINT=OFF"))))))))
+    (native-inputs
+     (list
+      cmake-minimal
+      ;; HACK: Add gcc, make tune work.
+      ;; build-system-with-tuning-compiler on guix/transformations.scm
+      ;; want to find compiler on the build-inputs, but gcc is on the
+      ;; python-build-system's host-inputs, so when tune it , will report:
+      ;; "failed to determine which compiler is used"
+      (canonical-package gcc)
+      python-setuptools
+      python-wheel))
+    (inputs
+     (list
+      ;; Use qcint when tuning for x86_64.
+      (if (and (assq 'cpu-tuning (package-properties this-package))
+               (target-x86-64?))
+          qcint
+          libcint)
+      xcfun
+      openblas))
+    (propagated-inputs
+     (list python-numpy
+           python-scipy
+           python-h5py))
+    (home-page "https://github.com/pyscf/pyscf")
+    (synopsis "Python library for quantum chemistry calculations")
+    (description
+     "@code{PySCF} (Python-based Simulations of Chemistry Framework) is a
+Python library for quantum chemistry calculations and method development.
+Most of the functionality is implemented in Python, while computationally
+critical parts are implemented in C.")
+    (properties '((tunable? . #t)))
+    (license license:asl2.0)))
+
+(define-public python-pyscf-dispersion
+  (package
+    (name "python-pyscf-dispersion")
+    (version "1.2.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+              (url "https://github.com/pyscf/dispersion")
+              (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0za1qmn0v948zalw1j6j0qdbj7cnfz398aq1lf145frxddmprz8n"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; This tries to download and build Simple DFT-D3 and DFT-D4.
+          (add-after 'unpack 'disable-build
+            (lambda _
+              (substitute* "setup.py"
+                (("packages=modules.*")
+                 "packages=modules,")
+                (("cmdclass=.*") ""))))
+          (add-after 'install 'symlink
+            (lambda* (#:key inputs outputs #:allow-other-keys)
+              (let ((outdir (string-append (site-packages inputs outputs)
+                                           "/pyscf/lib")))
+                (mkdir-p outdir)
+                (symlink (string-append #$(this-package-input "fortran-simple-dftd3")
+                                        "/lib/libs-dftd3.so")
+                         (string-append outdir "/libs-dftd3.so"))
+                (symlink (string-append #$(this-package-input "fortran-dftd4")
+                                        "/lib/libdftd4.so")
+                         (string-append outdir "/libdftd4.so"))))))))
+    (native-inputs
+     (list python-pytest
+           python-setuptools
+           python-wheel))
+    (inputs
+     (list fortran-simple-dftd3
+           fortran-dftd4))
+    (propagated-inputs
+     (list python-pyscf))
+    (home-page "https://github.com/pyscf/dispersion")
+    (synopsis "PySCF extensions for dispersion calculations")
+    (description
+     "This package is a wrapper around simple-dftd3 and dftd4 for use with pyscf.")
+    (license license:asl2.0)))
+
+(define-public python-pyscf-properties
+  (let ((commit "4eee5a430fb47eca5962f36fdcaf75c2b87e7ede")
+        (revision "1"))
+    (package
+      (name "python-pyscf-properties")
+      (version (git-version "0.1" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+                (url "https://github.com/pyscf/properties")
+                (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0jzyfqhk6hcn1dpc311iiamc5dnwp71q5087432f5gqqvpg1zz94"))))
+      (build-system pyproject-build-system)
+      (arguments (list #:tests? #f)) ; no tests
+      (native-inputs
+       (list python-setuptools
+             python-wheel))
+      (propagated-inputs
+       (list python-pyscf))
+      (home-page "https://github.com/pyscf/properties")
+      (synopsis "PySCF electronic properties extension")
+      (description
+       "This extension to python-pyscf provides calculations of different
+electromagnetic properties for molecules and crystals.")
+      (license license:asl2.0))))
+
+;; Depends on at least SSE3 and should only be used for a tuned build of
+;; python-pyscf.
+(define-public qcint
+  (hidden-package
+   (let ((base libcint))
+     (package
+       (inherit base)
+       (name "qcint")
+       (source
+        (origin
+          (method git-fetch)
+          (uri (git-reference
+                 (url "https://github.com/sunqm/qcint")
+                 (commit (string-append "v" (package-version base)))))
+          (file-name (git-file-name name (package-version base)))
+          (sha256
+           (base32
+            "17cgb2m93n48fagl5m2kr8n6kk8m9j6bxkhmh492ms3dbm0xpxml"))
+          (modules '((guix build utils)))
+          (snippet
+           '(begin
+              ;; Autogenerated code
+              (delete-file-recursively "src/autocode")))))
+       (arguments
+        (substitute-keyword-arguments (package-arguments base)
+          ((#:configure-flags flags '())
+           #~(cons "-DBUILD_MARCH_NATIVE=OFF"
+                   #$flags))
+          ((#:phases phases)
+           #~(modify-phases #$phases
+               (delete 'adjust-build-path)))
+          ;; Tests require python-pyscf.
+          ((#:tests? _ #f) #f)))
+       (native-inputs
+        (modify-inputs (package-native-inputs base)
+          (prepend (package-source base))))
+       (supported-systems '("x86_64-linux"))
+       (home-page "https://github.com/sunqm/qcint")
+       (synopsis "General GTO integrals for quantum chemistry (SIMD version
+for x86_64)")
+       (description "@code{qcint} is an optimized version of @code{libcint}, a
+C library (also with a Fortran API) to evaluate one- and two-electron
+integrals for Gaussian type functions.")
+       (properties `((tunable? . #t)))
+       (license license:gpl3+)))))
 
 (define-public gemmi
   (package
@@ -1273,3 +1662,84 @@ and 3D and descriptor generation for machine learning.")
     ;; other test fail.
     (supported-systems %64bit-supported-systems)
     (license license:bsd-3)))
+
+(define-public xcfun
+  (package
+    (name "xcfun")
+    (version "2.1.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+              (url "https://github.com/dftlibs/xcfun")
+              (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1bj70cnhbh6ziy02x988wwl7cbwaq17ld7qwhswqkgnnx8rpgxid"))
+       (modules '((guix build utils)))
+       (snippet
+        '(begin
+           ;; Remove bundled and generated code
+           (delete-file-recursively "external")
+           (delete-file-recursively "cmake/autocmake")
+           (delete-file-recursively "cmake/downloaded")
+           (delete-file-recursively "CMakeLists.txt")
+           (delete-file "cmake/update.py")))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'generate-cmake-file
+            (lambda _
+              (let ((autocmake-path
+                     #$(this-package-native-input "autocmake-src")))
+                (with-directory-excursion "cmake"
+                  (substitute* "autocmake.yml"
+                    (("^url_root:.*")
+                     (string-append "url_root: "
+                                    (string-append autocmake-path "/") "\n")))
+                  (invoke "python3"
+                          (string-append autocmake-path "/update.py") "..")))))
+          (add-after 'generate-cmake-file 'set-libtaylor-path
+            (lambda _
+              (substitute* "src/CMakeLists.txt"
+                (("\\$\\{PROJECT_SOURCE_DIR\\}/external/upstream/taylor")
+                 (string-append #$(this-package-native-input "libtaylor")
+                                "/include/taylor"))))))))
+    (native-inputs
+     `(("libtaylor" ,libtaylor)
+       ;; The Autocmake script copies files from its source repository (or ;;
+       ;; directory) and there are no packaging scripts, so the source is used
+       ;; directly.
+       ("autocmake-src"
+        ,(let* ((commit "77a1f851f08af1cbe0d95fd7dba4a16a14264412")
+                (revision "0")
+                (version (git-version "1.0.0" revision commit)))
+           (origin
+             (method git-fetch)
+             (uri (git-reference
+                    (url "https://github.com/dev-cafe/autocmake")
+                    (commit commit)))
+             (file-name (git-file-name "autocmake" version))
+             (modules '((guix build utils)))
+             (snippet
+              '(begin
+                 (delete-file-recursively "autocmake/external")))
+             (sha256
+              (base32
+               "0rq5hyaj6c3yv4357a2p317cqv22gngw5085aansii69h063d0a4")))))
+       ("python" ,python)
+       ("python-pyyaml" ,python-pyyaml)))
+    (home-page "https://github.com/dftlibs/xcfun")
+    (synopsis
+     "Library of exchange-correlation functionals with automatic differentiation")
+    (description
+     "@code{XCFun} is a library of exchange-correlation functionals with
+arbitrary-order derivatives for density functional theory.")
+    (license license:mpl2.0)))
+
+;;;
+;;; Avoid adding new packages to the end of this file. To reduce the chances
+;;; of a merge conflict, place them above in alphabetical order.
+;;;

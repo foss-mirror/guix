@@ -12,6 +12,8 @@
 ;;; Copyright © 2020 Peng Mei Yu <pengmeiyu@riseup.net>
 ;;; Copyright © 2021 Wamm K. D. <jaft.r@outlook.com>
 ;;; Copyright © 2022 Maxim Cournoyer <maxim.cournoyer@gmail.com>
+;;; Copyright © 2025 Denis 'GNUtoo' Carikli <GNUtoo@cyberdimension.org>
+;;; Copyright © 2025 Sharlatan Hellseher <sharlatanus@gmail.com>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -38,7 +40,8 @@
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system go)
   #:use-module (guix build-system cmake)
-  #:use-module (guix build-system python)
+  #:use-module (guix build-system pyproject)
+  #:use-module ((guix build-system python) #:select (pypi-uri))
   #:use-module (gnu packages admin)
   #:use-module (gnu packages autotools)
   #:use-module (gnu packages base)
@@ -56,6 +59,7 @@
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages python)
   #:use-module (gnu packages python-build)
+  #:use-module (gnu packages python-web)
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
   #:use-module (gnu packages sphinx)
@@ -65,62 +69,93 @@
   #:use-module (gnu packages xml)
   #:use-module (srfi srfi-26))
 
-(define-public date
-  ;; We make the same choice as the Arch package maintainer by choosing a
-  ;; recent commit to fix some bugs.
-  ;; https://github.com/Alexays/Waybar/issues/565
-  (let ((commit "9a0ee2542848ab8625984fc8cdbfb9b5414c0082"))
+(define-public adl-submit
+  (let ((commit "f38c7ad161fbe6ec72ecc725edbd624f5c627ea9")
+        (revision "0"))
     (package
-      (name "date")
-      (version (string-append "2.4.1-" (string-take commit 8)))
+      (name "adl-submit")
+      (version (git-version "1.0" revision commit))
       (source
        (origin
          (method git-fetch)
          (uri (git-reference
-               (url "https://github.com/HowardHinnant/date")
-               (commit "9a0ee2542848ab8625984fc8cdbfb9b5414c0082")))
+               (url "https://framagit.org/agenda-libre/adl-submit.git")
+               (commit commit)))
          (file-name (git-file-name name version))
          (sha256
-          (base32 "0yxsn0hj22n61bjywysxqgfv7hj5xvsl6isma95fl8xrimpny083"))
-         (patches
-          ;; Install pkg-config files
-          ;; https://github.com/HowardHinnant/date/pull/538
-          (search-patches "date-ignore-zonenow.patch"
-                          "date-output-pkg-config-files.patch"))))
-      (inputs (list tzdata))
-      (build-system cmake-build-system)
+          (base32 "1zi5s8xpbm253mjdlcc1j13qqz5q7s9zavk3h0m2gfgb52xy2avp"))))
+      (build-system pyproject-build-system)
       (arguments
-       '(#:configure-flags (list "-DUSE_SYSTEM_TZ_DB=ON"
-                                 "-DBUILD_SHARED_LIBS=ON"
-                                 "-DBUILD_TZ_LIB=ON"
-                                 "-DENABLE_DATE_TESTING=ON")
-         #:phases
-         (modify-phases %standard-phases
-           (add-after 'unpack 'patch-bin-bash
-             (lambda* (#:key inputs #:allow-other-keys)
-               (substitute* "compile_fail.sh"
-                 (("/bin/bash") (which "bash")))
-               #t))
-           (add-after 'unpack 'patch-zoneinfo-path
-             (lambda* (#:key inputs #:allow-other-keys)
-               (substitute* "src/tz.cpp"
-                 (("/usr/share/zoneinfo")
-                  (search-input-directory inputs
-                                          "share/zoneinfo")))))
-           (replace 'check
-             (lambda _
-               ;; Disable test that requires checking timezone that
-               ;; isn't set in the build environment.
-               (substitute* "CTestTestfile.cmake"
-                 (("add_test.tz_test_pass_zoned_time_deduction_test.*") "")
-                 (("set_tests_properties.tz_test_pass_zoned_time_deduction_test.*") ""))
-               (invoke "make" "testit"))))))
-      (synopsis "Date and time library for C++11 and C++14")
-      (description "Date is a header only C++ library that extends the chrono
-date algorithms library for calendar dates and durations.  It also provides
-the <tz.h> library for handling time zones and leap seconds.")
-      (home-page "https://howardhinnant.github.io/date/date.html")
-      (license license:expat))))
+       (list #:tests? #f)) ; no tests provided
+      (native-inputs
+       (list python-setuptools
+             python-wheel))
+      (inputs
+       (list python python-pycurl))
+      (home-page "https://www.agendadulibre.org")
+      (synopsis "Submit events to the Agenda Du Libre")
+      (description
+       "adl-submit is a tool that can be used to submit events to any instance
+of the Agenda Du Libre (a web calendar originally meant for free software
+events).  Users can set fields through the command line or create an XML that
+can be submitted with the adl-submit tool.  While the Agenda Du Libre web
+application is available in multiple languages, most of the events on
+https://www.agendadulibre.org are in French and the adl-submit tool is only
+available in French.")
+      (license license:gpl2))))
+
+(define-public date
+  (package
+    (name "date")
+    (version "3.0.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/HowardHinnant/date")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1qk7pgnk0bpinja28104qha6f7r1xwh5dy3gra7vjkqwl0jdwa35"))
+       (patches
+        ;; Install pkg-config files
+        ;; https://github.com/HowardHinnant/date/pull/538
+        (search-patches "date-ignore-zonenow.patch"
+                        "date-output-pkg-config-files.patch"))))
+    (inputs (list tzdata))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:test-target "testit"
+      #:configure-flags
+      #~(list "-DUSE_SYSTEM_TZ_DB=ON" "-DBUILD_SHARED_LIBS=ON"
+              "-DBUILD_TZ_LIB=ON" "-DENABLE_DATE_TESTING=ON")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'patch-bin-bash
+            (lambda* (#:key inputs #:allow-other-keys)
+              (substitute* "compile_fail.sh"
+                (("/bin/bash")
+                 (search-input-file inputs "bin/bash")))))
+          (add-after 'unpack 'patch-zoneinfo-path
+            (lambda* (#:key inputs #:allow-other-keys)
+              (substitute* "src/tz.cpp"
+                (("/usr/share/zoneinfo")
+                 (search-input-directory inputs "share/zoneinfo")))))
+          (add-after 'unpack 'skip-failing-tests
+            ;; Disable test that requires checking timezone that
+            ;; isn't set in the build environment.
+            (lambda _
+              (for-each delete-file
+                        '("test/solar_hijri_test/parse.pass.cpp"
+                          "test/tz_test/zoned_time_deduction.pass.cpp")))))))
+    (synopsis "Date and time library for C++11 and C++14")
+    (description
+     "Date is a header only C++ library that extends the chrono date
+algorithms library for calendar dates and durations.  It also provides the
+<tz.h> library for handling time zones and leap seconds.")
+    (home-page "https://howardhinnant.github.io/date/date.html")
+    (license license:expat)))
 
 (define-public libical
   (package
@@ -179,32 +214,40 @@ data units.")
 (define-public khal
   (package
     (name "khal")
-    (version "0.11.3")
-    (source (origin
-              (method url-fetch)
-              (uri (pypi-uri "khal" version))
-              (sha256
-               (base32
-                "0pijq7crjpak1rq3hzx68fz34n7ikkcz3xsk9r3brny17z2brk58"))))
-    (build-system python-build-system)
+    ;; TODO: The latest version requires fresh pytz module and fails with
+    ;; error: E AttributeError: module 'icalendar' has no attribute 'use_pytz'
+    (version "0.12.0")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (pypi-uri "khal" version))
+       (sha256
+        (base32 "1gxrhfr4kv5mij75nzjgj69wcssbx4dfbky196w6b4nh3v7nm2pf"))))
+    (build-system pyproject-build-system)
     (arguments
-     `(#:tests? #f ; The test suite is unreliable. See <https://bugs.gnu.org/44197>
-       #:phases (modify-phases %standard-phases
-        ;; Building the manpage requires khal to be installed.
-        (add-after 'install 'manpage
-          (lambda* (#:key inputs outputs #:allow-other-keys)
-            ;; Make installed package available for running the tests
-            (add-installed-pythonpath inputs outputs)
-            (invoke "make" "--directory=doc/" "man")
-            (install-file
-             "doc/build/man/khal.1"
-             (string-append (assoc-ref outputs "out") "/share/man/man1")))))))
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; Building the manpage requires khal to be installed.
+          (add-after 'install 'manpage
+            (lambda* (#:key inputs outputs #:allow-other-keys)
+              (add-installed-pythonpath inputs outputs)
+              (invoke "make" "--directory=doc/" "man")
+              (install-file "doc/build/man/khal.1"
+                            (string-append #$output "/share/man/man1")))))))
     (native-inputs
-     (list python-setuptools-scm
-           ;; Required to build manpage
-           python-sphinxcontrib-newsfeed python-sphinx))
+     (list python-freezegun
+           python-importlib-metadata
+           python-packaging
+           python-pytest
+           python-setuptools-next
+           python-setuptools-scm-next
+           python-sphinx
+           python-sphinxcontrib-newsfeed
+           python-wheel))
     (inputs
-     (list python-atomicwrites
+     (list python-aiohttp
+           python-atomicwrites
            python-click
            python-click-log
            python-configobj
@@ -212,16 +255,17 @@ data units.")
            python-icalendar
            python-pytz
            python-pyxdg
+           python-setproctitle
            python-tzlocal
            python-urwid
-           ;; For the extras.
-           python-setproctitle))
-    (synopsis "Console calendar program")
-    (description "Khal is a standards based console calendar program,
-able to synchronize with CalDAV servers through vdirsyncer.  It includes
-both a @acronym{CLI, command-line interface} and a @acronym{TUI, textual user
-interface} named 'ikhal'.")
+           vdirsyncer))
     (home-page "https://lostpackets.de/khal/")
+    (synopsis "Console calendar program")
+    (description
+     "Khal is a standards based console calendar program, able to synchronize
+with CalDAV servers through vdirsyncer.  It includes both a @acronym{CLI,
+command-line interface} and a @acronym{TUI, textual user interface} named
+'ikhal'.")
     (license license:expat)))
 
 (define-public remind

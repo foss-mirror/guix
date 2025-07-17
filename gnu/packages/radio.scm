@@ -17,6 +17,7 @@
 ;;; Copyright © 2024 Andy Tai <atai@atai.org>
 ;;; Copyright © 2024 Noisytoot <ron@noisytoot.org>
 ;;; Copyright © 2025 Rutherther <rutherther@ditigal.xyz>
+;;; Copyright © 2025 Jordan Moore <lockbox@struct.foo>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -103,7 +104,7 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
   #:use-module (gnu packages readline)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
   #:use-module (gnu packages sdl)
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages sphinx)
@@ -749,7 +750,10 @@ a local network link.")
        (uri (pypi-uri "SimpleSoapy" version))
        (sha256
         (base32 "0bh02m5zj82mp7sxpvwr24ylmrbp3p4r9q7psqcfnxl628w3b4hl"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
+    (native-inputs
+     (list python-setuptools
+           python-wheel))
     (propagated-inputs
      (list python-numpy soapysdr))
     (home-page "https://github.com/xmikos/simplesoapy")
@@ -769,7 +773,12 @@ library.")
        (uri (pypi-uri "soapy_power" version))
        (sha256
         (base32 "1rajmygcqvv5ph7yk65r4w581lfszrz0f48csvfmma1ami0lirdm"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
+    (arguments
+     (list #:tests? #f)) ; no tests in PyPI or Git
+    (native-inputs
+     (list python-setuptools
+           python-wheel))
     (inputs
      (list python-numpy
            python-scipy
@@ -1773,8 +1782,8 @@ instances over the network, and general QSO and DXpedition logging.")
                    gfortran
                    pkg-config
                    qttools-5)
-             (if (supported-package? ruby-asciidoctor)
-               (list ruby-asciidoctor)
+             (if (supported-package? ruby-asciidoctor/minimal)
+               (list ruby-asciidoctor/minimal)
                '())))
     (inputs
      (list boost
@@ -1811,8 +1820,8 @@ weak-signal conditions.")
     (build-system qt-build-system)
     (native-inputs
      (append (list asciidoc gfortran pkg-config qttools-5)
-             (if (supported-package? ruby-asciidoctor)
-                 (list ruby-asciidoctor)
+             (if (supported-package? ruby-asciidoctor/minimal)
+                 (list ruby-asciidoctor/minimal)
                  '())))
     (inputs
      (list
@@ -1912,6 +1921,97 @@ focused on DXing and being shaped by community of DXers.JTDX")
 mode) providing weak signal keyboard to keyboard messaging to amateur radio
 operators.")
     (license license:gpl3)))
+
+(define-public limesuite-ng
+  (package
+    (name "limesuite-ng")
+    (version "25.1.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/myriadrf/LimeSuiteNG.git")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1riawgl7x89n6384y1j6brak3yzslap1vsnr5i33rwqf7hbrl4kh"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list
+         ;; Do not build pcie drivers, as they require
+         ;; kernel specific headers.
+         "-DBUILD_DRIVERS_LIMEPCIE=false"
+         ;; Specify the udev rules installation path into
+         ;; the ouput profile.
+         (string-append "-DUDEV_RULES_INSTALL_PATH="
+                        #$output "/lib/udev/rules.d")
+         ;; Do not reload udev rules after build.
+         "-DUDEV_RULES_RELOAD_ON_INSTALL=false")
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; The test binary requires different build options, so we
+          ;; re-issue a cmake configure + build before running the tests.
+          (replace 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (with-directory-excursion "../source"
+                  (substitute* "tests/CMakeLists.txt"
+                    ;; Provide google test locally instead of remote fetch.
+                    (("fetchcontent_makeavailable\\(googletest\\)")
+                     "find_package(GTest REQUIRED)"))
+                  ;; Configure the test build.
+                  (invoke "cmake"
+                          "-B"
+                          "../tests"
+                          "-DCMAKE_BUILD_TYPE=Debug"
+                          "-DBUILD_SHARED_LIBS=OFF"
+                          "-DENABLE_UNIT_TESTS=on"
+                          "-DBUILD_GUI=off"))
+                ;; Build and run the test binary.
+                (with-directory-excursion "../tests"
+                  (invoke "cmake"
+                          "--build"
+                          "tests"
+                          "--parallel"
+                          (number->string (parallel-job-count))
+                          "--config"
+                          "Debug"
+                          "--target"
+                          "gtest-runner")
+                  (invoke "./bin/gtest-runner"))))))))
+    (native-inputs (list pkg-config))
+    (inputs (list boost
+                  fftw
+                  glew
+                  gmp
+                  gnuplot
+                  gnuradio
+                  googletest
+                  libusb
+                  mesa
+                  pybind11
+                  python
+                  python-numpy
+                  soapysdr
+                  wxwidgets
+                  ;; GnuRadio-specific dependencies we need for the plugin,
+                  ;; if one is not present, then it will silently omit the
+                  ;; GnuRadio plugin from the build. Necessary dependencies
+                  ;; can be found in the path `cmake/Modules/GnuradioConfig.cmake`
+                  ;; in the GnuRadio source code checkout and by grepping for
+                  ;; "Gnuradio_NOT_FOUND_MESSAGE" in CMake build logs.
+                  spdlog
+                  volk))
+    (home-page "https://github.com/myriadrf/LimeSuiteNG")
+    (synopsis "C++ library and tools for LimeSDR devices (LMS7002M)")
+    (description
+     "Lime Suite NG is a collection of software supporting several hardware
+     platforms based on the LMS7002M transceiver under the LimeSDR name.
+     It provides a C++ API, command-line tools, a GUI, and plugins for
+     multiple SDR tools.")
+    (license license:expat)))
 
 (define-public xnec2c
   (package
@@ -3133,7 +3233,7 @@ Caller-ID.")
 (define-public rfcat
   (package
     (name "rfcat")
-    (version "1.9.6")
+    (version "2.0.1")
     (source
      (origin
        (method git-fetch)
@@ -3142,8 +3242,11 @@ Caller-ID.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0zmgbgf1025ln2v6lc27dmkmwv8pxjgrmhmpk34rkkixhvnk69pf"))))
-    (build-system python-build-system)
+        (base32 "0wf7fh9af24v6yfn83d00f3km4g5afgi8s0h7922si6pn1anrm45"))))
+    (build-system pyproject-build-system)
+    (native-inputs
+     (list python-setuptools
+           python-wheel))
     (inputs
      (list python-future
            python-ipython
@@ -3226,10 +3329,38 @@ of devices than RTL-SDR.")
        (file-name (git-file-name name version))
        (sha256
         (base32 "0wfqdcfip1kg5b5a8d01bip5nqvjhs2x8bgc9vwhghn6vk8pqxxg"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:test-flags
+      ;; FIXME: Find out how to fix these tests.
+      #~(list "--ignore=tests/test_continuous_modulator.py"
+              ;; This test causes a segmentation fault
+              "--ignore=tests/test_send_recv_dialog_gui.py"
+              ;; This test hangs forever
+              "--ignore=tests/test_spectrogram.py")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'configure-compiler
+            (lambda _
+              ;; Use gcc as compiler
+              (substitute* "src/urh/dev/native/ExtensionHelper.py"
+                (("compiler = ccompiler\\.new_compiler\\(\\)\n" all)
+                 (string-append
+                  all "    compiler.set_executables(compiler='gcc',"
+                  " compiler_so='gcc', linker_exe='gcc', linker_so='gcc -shared')\n")))))
+          (add-after 'build 'build-cythonext
+            (lambda _
+              (invoke "python" "src/urh/cythonext/build.py")))
+          (add-before 'check 'prepare-x
+            (lambda _
+              (system "Xvfb &")
+              (setenv "DISPLAY" ":0")
+              (setenv "HOME" "/tmp"))))))
     (native-inputs
      (list python-cython
            python-pytest
+           python-wheel
            xorg-server-for-tests))
     (inputs
      (list airspy
@@ -3242,37 +3373,6 @@ of devices than RTL-SDR.")
            python-pyaudio
            python-pyqt
            rtl-sdr))
-    (arguments
-     `(#:phases
-       (modify-phases %standard-phases
-         (add-after 'unpack 'configure-compiler
-           (lambda _
-             ;; Use gcc as compiler
-             (substitute* "src/urh/dev/native/ExtensionHelper.py"
-               (("compiler = ccompiler\\.new_compiler\\(\\)\n" all)
-                (string-append
-                 all "    compiler.set_executables(compiler='gcc',"
-                 " compiler_so='gcc', linker_exe='gcc', linker_so='gcc -shared')\n")))))
-         (add-after 'unpack 'disable-some-tests
-           (lambda _
-             ;; FIXME
-             (for-each delete-file
-                       '("tests/test_continuous_modulator.py"
-                         ;; This test causes a segmentation fault
-                         "tests/test_send_recv_dialog_gui.py"
-                         ;; This test hangs forever
-                         "tests/test_spectrogram.py"))))
-         (add-after 'build 'build-cythonext
-           (lambda _
-             (invoke "python" "src/urh/cythonext/build.py")))
-         (replace 'check
-           (lambda* (#:key inputs tests? #:allow-other-keys)
-             (when tests?
-               (setenv "HOME" "/tmp")
-               (system (string-append (search-input-file inputs "/bin/Xvfb")
-                                     " :1 &"))
-               (setenv "DISPLAY" ":1")
-               (invoke "pytest")))))))
     (home-page "https://github.com/jopohl/urh")
     (synopsis "Wireless protocol investigation program")
     (description

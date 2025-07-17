@@ -3,7 +3,7 @@
 ;;; Copyright © 2015 Tomáš Čech <sleep_walker@gnu.org>
 ;;; Copyright © 2016, 2019 Leo Famulari <leo@famulari.name>
 ;;; Copyright © 2016, 2017, 2019, 2023, 2025 Ricardo Wurmus <rekado@elephly.net>
-;;; Copyright © 2016, 2018, 2021, 2023, 2024 Efraim Flashner <efraim@flashner.co.il>
+;;; Copyright © 2016, 2018, 2021, 2023-2025 Efraim Flashner <efraim@flashner.co.il>
 ;;; Copyright © 2016 Andreas Enge <andreas@enge.fr>
 ;;; Copyright © 2017 Manolis Fragkiskos Ragkousis <manolis837@gmail.com>
 ;;; Copyright © 2017, 2018 Ben Woodcroft <donttrustben@gmail.com>
@@ -39,6 +39,7 @@
 ;;; Copyright © 2023, 2024 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2024 Ivan Vilata-i-Balaguer <ivan@selidor.net>
 ;;; Copyright © 2024 James Smith <jsubuntuxp@disroot.org>
+;;; Copyright © 2025 Nicolas Graves <ngraves@ngraves.fr>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -67,6 +68,7 @@
   #:use-module (gnu packages build-tools)
   #:use-module (gnu packages cdrom)
   #:use-module (gnu packages check)
+  #:use-module (gnu packages cmake)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
   #:use-module (gnu packages crypto)
@@ -1007,6 +1009,36 @@ many more.")
     ;; The 'LICENSE' file explains that a subset is available under more
     ;; permissive licenses.
     (license license:gpl3+)))
+
+(define-public geomcpp
+  ;; XXX: No releases.
+  (let ((commit "730b3d35bc4fcd5f68764239682d936bae192811")
+        (revision "0"))
+    (package
+      (name "geomcpp")
+      (version (git-version "0.0.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/Grumbel/geomcpp")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0qswqbyzsns8wp1xzkl74nywdpg9f6mjjry0y3c5ghz4ah0hg8gr"))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        #:configure-flags
+        #~(list "-DBUILD_TESTS=ON")))
+      (inputs (list glm))
+      (native-inputs (list googletest tinycmmc))
+      (home-page "https://github.com/Grumbel/geomcpp")
+      (synopsis "Collection of point, size and rect classes")
+      (description
+       "This package provides a very basic collection of point, size and rect
+classes for C++.")
+      (license license:gpl3+))))
 
 (define-public imath
   (package
@@ -2209,10 +2241,11 @@ and GPU architectures.")
     (license license:asl2.0)))
 
 (define-public opencsg
-  (let ((dot-to-dash (lambda (c) (if (char=? c #\.) #\- c))))
+  (let ((dot-to-dash (lambda (c)
+                       (if (char=? c #\.) #\- c))))
     (package
       (name "opencsg")
-      (version "1.4.2")
+      (version "1.8.1")
       (source
        (origin
          (method git-fetch)
@@ -2223,21 +2256,13 @@ and GPU architectures.")
                                       "-release"))))
          (file-name (git-file-name name version))
          (sha256
-          (base32
-           "00m4vs6jn3scqczscc4591l1d6zg6anqp9v1ldf9ymf70rdyvm7m"))))
-      (build-system gnu-build-system)
+          (base32 "0q19mswyjlampdssqgik4q7j08fbj0dhxdr9mzg0i7ma2b2rhdhw"))))
+      (build-system cmake-build-system)
       (arguments
-       `(#:phases
-         (modify-phases %standard-phases
-           (replace 'configure
-             (lambda* (#:key outputs #:allow-other-keys)
-               (substitute* "src/Makefile"
-                 (("/usr/local") (assoc-ref outputs "out")))
-               #t))
-           (add-before 'build 'skip-example
-             (lambda _ (chdir "src") #t)))))
-      (inputs
-       (list glew freeglut))
+       `(#:phases (modify-phases %standard-phases
+                    ;; library has no tests
+                    (delete 'check))))
+      (inputs (list glew freeglut))
       (synopsis "Library for rendering Constructive Solid Geometry (CSG)")
       (description
        "OpenCSG is a library for rendering Constructive Solid Geometry (CSG) using
@@ -2362,7 +2387,7 @@ and engineering community.")
                         (string-append
                          ;;
                          "--args="
-                         "cc=\"gcc\" "              ;defaults to 'cc'
+                         "cc=\"" #$(cc-for-target) "\" " ;defaults to 'cc'
                          "is_official_build=true "  ;to use system libraries
                          "is_component_build=true " ;build as a shared library
                          "skia_use_system_zlib=true " ; use system zlib library
@@ -2458,7 +2483,7 @@ Cflags: -I${includedir}~%" #$output #$version)))))
                     (invoke "gn" "gen" "out/Debug"
                             (string-append
                              "--args="
-                             "cc=\"gcc\" "                    ;defaults to 'cc'
+                             "cc=\"" #$(cc-for-target) "\" "  ;defaults to 'cc'
                              "skia_compile_sksl_tests=false " ; disable some tests
                              "skia_use_perfetto=false " ; disable performance tests
                              "skia_use_wuffs=false " ; missing performance tool
@@ -2551,9 +2576,13 @@ Cflags: -I${includedir}~%" #$output #$version)))))
                             "gl" "lottie" "_" "_"
                             "_" "_" "_" "ES2BlendWithNoTexture"))
                   (format #t "test suite not run~%")))))))
-  (native-inputs (list gn libjpeg-turbo ninja pkg-config python-wrapper
-                       spirv-tools spirv-headers
-                       icu4c-for-skia glu xorg-server-for-tests))
+  (native-inputs
+   (append (if (target-x86-32?)
+               (list clang-toolchain)
+               '())
+           (list gn libjpeg-turbo ninja pkg-config python-wrapper
+                 spirv-tools spirv-headers
+                 icu4c-for-skia glu xorg-server-for-tests)))
   (inputs (list expat fontconfig freetype harfbuzz mesa libwebp zlib))
   (home-page "https://skia.org/")
   (synopsis "2D graphics library")

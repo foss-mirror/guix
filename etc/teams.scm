@@ -38,15 +38,25 @@ exec $pre_inst_env_maybe guix repl -- "$0" "$@"
 
 ;;; Code:
 
-(use-modules (srfi srfi-1)
-             (srfi srfi-9)
-             (srfi srfi-26)
-             (ice-9 format)
-             (ice-9 regex)
-             (ice-9 match)
-             (ice-9 rdelim)
-             (guix ui)
-             (git))
+(define-module (teams)
+  #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-9)
+  #:use-module (srfi srfi-26)
+  #:use-module (srfi srfi-34)
+  #:use-module (srfi srfi-35)
+  #:use-module (srfi srfi-71)
+  #:use-module (ice-9 format)
+  #:use-module (ice-9 regex)
+  #:use-module (ice-9 match)
+  #:use-module (ice-9 rdelim)
+  #:use-module (guix ui)
+  #:use-module (git)
+  #:use-module (json)
+  #:use-module (web client)
+  #:use-module (web request)
+  #:use-module (web response)
+  #:use-module (rnrs bytevectors)
+  #:use-module (guix base64))
 
 (define-record-type <regexp*>
   (%make-regexp* pat flag rx)
@@ -75,13 +85,14 @@ exec $pre_inst_env_maybe guix repl -- "$0" "$@"
   (scope       team-scope))
 
 (define-record-type <person>
-  (make-person name email)
+  (make-person name email account)
   person?
   (name    person-name)
-  (email   person-email))
+  (email   person-email)
+  (account person-codeberg-account))
 
-(define* (person name #:optional email)
-  (make-person name email))
+(define* (person name #:optional email account)
+  (make-person name email account))
 
 (define* (team id #:key name description (members '())
                (scope '()))
@@ -116,16 +127,333 @@ exec $pre_inst_env_maybe guix repl -- "$0" "$@"
               (quote (teams ...)))))
 
 
+;;;
+;;; Forgejo support.
+;;;
+
+;; Forgejo team.  This corresponds to both the 'Team' and 'CreateTeamOption'
+;; structures in Forgejo.
+(define-json-mapping <forgejo-team>
+  forgejo-team forgejo-team?
+  json->forgejo-team <=> forgejo-team->json
+  (name                forgejo-team-name)
+  (id                  forgejo-team-id)           ;integer
+  (description         forgejo-team-description)
+  (all-repositories?   forgejo-team-all-repositories?
+                       "includes_all_repositories")
+  (can-create-org-repository? forgejo-team-can-create-org-repository?
+                              "can_create_org_repo")
+  (permission          forgejo-team-permission
+                       "permission" string->symbol symbol->string)
+  ;; A 'units' field exists but is deprecated in favor of 'units_map'.
+  (unit-map            forgejo-team-unit-map
+                       "units_map" json->unit-map unit-map->json))
+
+(define (unit-map->json lst)
+  (map (match-lambda
+         ((unit . permission)
+          (cons unit (symbol->string permission))))
+       lst))
+
+(define (json->unit-map lst)
+  (map (match-lambda
+         ((unit . permission)
+          (cons unit (string->symbol permission))))
+       lst))
+
+(define %default-forgejo-team-units
+  '("repo.code" "repo.issues" "repo.pulls" "repo.releases"
+    "repo.wiki" "repo.ext_wiki" "repo.ext_issues" "repo.projects"
+    "repo.packages" "repo.actions"))
+
+(define %default-forgejo-team-unit-map
+  ;; Everything (including "repo.code") is read-only by default, except a few
+  ;; units.
+  (map (match-lambda
+         ("repo.pulls" (cons "repo.pulls" 'write))
+         ("repo.issues" (cons "repo.issues" 'write))
+         ("repo.wiki" (cons "repo.wiki" 'write))
+         (unit (cons unit 'read)))
+       %default-forgejo-team-units))
+
+;; Forgejo user, as returned by 'forgejo-team-members'.
+(define-json-mapping <forgejo-user>
+  forgejo-user forgejo-user?
+  json->forgejo-user <=> forgejo-user->json
+  (id           forgejo-user-id)                  ;integer
+  (active?      forgejo-user-active? "active")    ;boolean
+  (login        forgejo-user-login)               ;string
+  (full-name    forgejo-user-full-name "full_name") ;string
+  ;; Various fields omitted.
+  )
+
+(define (forgejo-http-headers token)
+  "Return the HTTP headers for basic authorization with TOKEN."
+  `((content-type . (application/json (charset . "UTF-8")))
+    ;; The "Auth Basic" scheme needs a base64-encoded colon-separated user and
+    ;; token values. Forgejo doesn't seem to care for the user part but the
+    ;; colon seems to be necessary for the token value to get extracted.
+    (authorization . (basic . ,(base64-encode
+                                (string->utf8
+                                 (string-append ":" token)))))))
+
+;; Error with a Forgejo request.
+(define-condition-type &forgejo-error &error
+  forgejo-error?
+  (url       forgejo-error-url)
+  (method    forgejo-error-method)
+  (response  forgejo-error-response))
+
+(define %codeberg-organization
+  ;; Name of the organization at codeberg.org.
+  "guix")
+
+(define* (codeberg-url items #:key (parameters '()))
+  "Construct a Codeberg API URL with the path components ITEMS and query
+PARAMETERS."
+  (define query
+    (match parameters
+      (() "")
+      (((keys . values) ...)
+       (string-append "?" (string-join
+                           (map (lambda (key value)
+                                  (string-append key "=" value)) ;XXX: hackish
+                                keys values)
+                           "&")))))
+
+  (string-append "https://codeberg.org/api/v1/"
+                 (string-join items "/")
+                 query))
+
+(define-syntax process-url-components
+  (syntax-rules (&)
+    "Helper macro to construct a Codeberg URL."
+    ((_ components ... & parameters)
+     (codeberg-url (list components ...)
+                   #:parameters parameters))
+    ((_ components ...)
+     (codeberg-url (list components ...)))))
+
+(define-syntax define-forgejo-request
+  (syntax-rules (=>)
+    "Define a procedure that performs a Forgejo request."
+    ((_ (proc parameters ...)
+        docstring
+        (verb components ...)
+        body
+        => code
+        deserialize)
+     (define (proc token parameters ...)
+       docstring
+       (let* ((url (process-url-components components ...))
+              (response port (http-request url
+                                           #:method 'verb
+                                           #:streaming? #t
+                                           #:headers (forgejo-http-headers token)
+                                           #:body body)))
+         (if (= code (response-code response))
+             (let ((value (deserialize port)))
+               (when port (close-port port))
+               value)
+             (begin
+               (when port (close-port port))
+               (raise (condition (&forgejo-error (url url)
+                                                 (method 'verb)
+                                                 (response response)))))))))
+    ((_ (proc parameters ...)
+        docstring
+        (method components ...)
+        => code
+        deserialize)
+     (define-forgejo-request (proc parameters ...)
+       docstring
+       (method components ...)
+       ""
+       => code
+       deserialize))
+    ((_ (proc parameters ...)
+        docstring
+        (method components ...)
+        => code)
+     (define-forgejo-request (proc parameters ...)
+       docstring
+       (method components ...)
+       ""
+       => code
+       (const *unspecified*)))))
+
+;; API documentation at <https://codeberg.org/api/swagger>.
+
+(define-forgejo-request (organization-teams organization)
+  "Return the list of teams of ORGANIZATION."
+  (GET "orgs" organization "teams"
+       & '(("limit" . "100")))                    ;get up to 100 teams
+  => 200
+  (lambda (port)
+    (map json->forgejo-team (vector->list (json->scm port)))))
+
+(define-forgejo-request (create-team organization team)
+  "Create TEAM, a Forgejo team, under ORGANIZATION."
+  (POST "orgs" organization "teams")
+  (forgejo-team->json team)
+  => 201
+  json->forgejo-team)
+
+(define-forgejo-request (edit-team team)
+  "Update TEAM, a Forgejo team."
+  (PATCH "teams" (number->string (forgejo-team-id team)))
+  (forgejo-team->json team)
+  => 200
+  json->forgejo-team)
+
+(define-forgejo-request (delete-team team)
+  "Delete TEAM, a Forgejo team."
+  (DELETE "teams" (number->string (forgejo-team-id team)))
+  => 204)
+
+(define-forgejo-request (forgejo-team-members team)
+  "Return the list of account names of the members of TEAM, a Forgejo team."
+  (GET "teams" (number->string (forgejo-team-id team)) "members"
+       & '(("limit" . "100")))                    ;get up to 100 members
+  => 200
+  (lambda (port)
+    (set-port-encoding! port "UTF-8")
+    (map json->forgejo-user (vector->list (json->scm port)))))
+
+(define-forgejo-request (add-team-member team user)
+  "Add USER (a string) to TEAM, a Forgejo team."
+  (PUT "teams" (number->string (forgejo-team-id team))
+       "members" user)
+  => 204)
+
+(define-forgejo-request (repository-teams owner repository)
+  "Return the list of teams assigned to REPOSITORY of OWNER."
+  (GET "repos" owner repository "teams"
+       & '(("limit" . "100")))                    ;get up to 100 teams
+  => 200
+  (lambda (port)
+    (map json->forgejo-team (vector->list (json->scm port)))))
+
+(define-forgejo-request (add-repository-team owner repository team-name)
+  "Add TEAM-NAME as a team of OWNER's REPOSITORY."
+  (PUT "repos" owner repository "teams" team-name)
+  => 204)
+
+(define (team->forgejo-team team)
+  "Return a Forgejo team derived from TEAM, a <team> record."
+  (forgejo-team (team-id->forgejo-id (team-id team))
+                #f
+                (or (team-description team) "")
+                #f                                ;all-repositories?
+                #f                                ;can-create-org-repository?
+                'read                             ;permission
+                %default-forgejo-team-unit-map))
+
+(define* (update-team token forgejo-team team
+                      #:key (log-port (current-error-port)))
+  "Update FORGEJO-TEAM on the server so that it matches TEAM."
+  (format log-port "updating team '~a'~%"
+          (forgejo-team-name forgejo-team))
+
+  ;; Update metadata: description, permissions, etc.
+  (edit-team token forgejo-team)
+
+  ;; Update the list of members so it matches those of TEAM.
+  (let* ((current   (map forgejo-user-login
+                         (forgejo-team-members token forgejo-team)))
+         (target    (filter-map person-codeberg-account
+                                (team-members team)))
+         (to-add    (lset-difference string=? target current))
+         (to-remove (lset-difference string=? current target)))
+    (for-each (lambda (user)
+                (format log-port "adding '~a' to team '~a'~%"
+                        user (forgejo-team-name forgejo-team))
+                (add-team-member token forgejo-team user))
+              to-add)
+    (for-each (lambda (user)
+                (format log-port "removing '~a' from team '~a'~%"
+                        user (forgejo-team-name forgejo-team)))
+              to-remove)))
+
+(define* (synchronize-team token team
+                           #:key
+                           (current-teams
+                            (organization-teams token
+                                                %codeberg-organization))
+                           (log-port (current-error-port)))
+  "Synchronize TEAM, a <team> record, so that its metadata and list of members
+are accurate on Codeberg, either by creating it or by updating it if it
+already exists.  Lookup team IDs among CURRENT-TEAMS."
+  (let ((forgejo-team
+         (find (let ((name (team-id->forgejo-id (team-id team))))
+                 (lambda (candidate)
+                   (string=? (forgejo-team-name candidate) name)))
+               current-teams)))
+    (if forgejo-team
+        (update-team token forgejo-team team
+                     #:log-port log-port)
+        (let ((forgejo-team
+               (create-team token %codeberg-organization
+                            (or forgejo-team
+                                (team->forgejo-team team)))))
+          (format log-port "created team '~a'~%"
+                  (forgejo-team-name forgejo-team))
+          (let ((members (filter-map person-codeberg-account
+                                     (team-members team))))
+            (for-each (lambda (member)
+                        (add-team-member token forgejo-team member))
+                      members)
+            (format log-port "added ~a members to team '~a'~%"
+                    (length members)
+                    (forgejo-team-name forgejo-team))
+            forgejo-team)))))
+
+(define (synchronize-teams token)
+  "Push all the existing teams on Codeberg."
+  (let ((teams (sort-teams
+                (hash-map->list (lambda (_ value) value) %teams))))
+    (format (current-error-port)
+            "creating ~a teams in the '~a' organization at Codeberg...~%"
+            (length teams) %codeberg-organization)
+
+    ;; Arrange to compute the list of existing teams once and for all.
+    (for-each (let ((teams (organization-teams token
+                                               %codeberg-organization)))
+                (lambda (team)
+                  (synchronize-team token team
+                                    #:current-teams teams)))
+              teams)
+
+    ;; Ensure all the teams are associated with the main repository.
+    (let ((repository-teams (repository-teams token
+                                              %codeberg-organization
+                                              "guix")))
+      (for-each (lambda (missing)
+                  (format (current-error-port)
+                          "adding team '~a' to '~a/guix'~%"
+                          (team-id missing) %codeberg-organization)
+                  (add-repository-team token %codeberg-organization "guix"
+                                       (team-id->forgejo-id
+                                        (team-id missing))))
+                (let ((names (map forgejo-team-name repository-teams)))
+                  (remove (lambda (team)
+                            (member (team-id->forgejo-id (team-id team))
+                                    names))
+                          teams))))))
+
+
 
 (define-team audio
   (team 'audio
         #:name "Audio team"
         #:description "Audio related packages."
-        #:scope (list "gnu/packages/audio.scm")))
+        #:scope (list "gnu/packages/audio.scm"
+                      "gnu/packages/xiph.scm")))
 
 (define-team bootstrap
   (team 'bootstrap
         #:name "Bootstrap"
+        #:description "Full-source bootstrap: stage0, Mes, Gash, etc."
         #:scope (list "gnu/packages/commencement.scm"
                       "gnu/packages/mes.scm")))
 
@@ -225,7 +553,8 @@ exec $pre_inst_env_maybe guix repl -- "$0" "$@"
               "guix/workers.scm"
               (make-regexp* "^guix/platforms/")
               (make-regexp* "^guix/scripts/")
-              (make-regexp* "^guix/store/"))))
+              (make-regexp* "^guix/store/")
+              (make-regexp* "^nix/"))))
 
 (define-team core-packages
   (team 'core-packages
@@ -269,6 +598,7 @@ exec $pre_inst_env_maybe guix repl -- "$0" "$@"
         #:description "The extensible, customizable text editor and its
 ecosystem."
         #:scope (list "gnu/packages/aux-files/emacs/guix-emacs.el"
+                      "gnu/packages/aux-files/emacs/comp-integrity.el"
                       (make-regexp* "^gnu/packages/emacs(-.+|)\\.scm$")
                       "gnu/packages/tree-sitter.scm"
                       "guix/build/emacs-build-system.scm"
@@ -291,10 +621,10 @@ ecosystem."
         #:scope (list "gnu/packages/emulators.scm"
                       "gnu/packages/games.scm"
                       "gnu/packages/game-development.scm"
-                      "gnu/packages/minetest.scm"
+                      "gnu/packages/luanti.scm"
                       "gnu/packages/esolangs.scm" ; granted, rather niche
                       "gnu/packages/motti.scm"
-                      "guix/build/minetest-build-system.scm")))
+                      "guix/build/luanti-build-system.scm")))
 
 (define-team gnome
   (team 'gnome
@@ -355,6 +685,7 @@ the haskell-build-system."
 (define-team hurd
   (team 'hurd
         #:name "Team for the Hurd"
+        #:description "GNU Hurd packages and operating system support."
         #:scope (list "gnu/system/hurd.scm"
                       "gnu/system/images/hurd.scm"
                       "gnu/build/hurd-boot.scm"
@@ -576,11 +907,17 @@ importer."
         #:name "Science team"
         #:description "The main science disciplines and fields related
 packages (e.g. Astronomy, Chemistry, Math, Physics etc.)"
-        #:scope (list "gnu/packages/algebra.scm"
+        #:scope (list (make-regexp* "^gnu/packages/fortran(-.+|)\\.scm$")
+                      "gnu/packages/algebra.scm"
                       "gnu/packages/astronomy.scm"
-                      "gnu/packages/geo.scm"
                       "gnu/packages/chemistry.scm"
-                      "gnu/packages/maths.scm")))
+                      "gnu/packages/geo.scm"
+                      "gnu/packages/graph.scm"
+                      "gnu/packages/lean.scm"
+                      "gnu/packages/maths.scm"
+                      "gnu/packages/medical.scm"
+                      "gnu/packages/sagemath.scm"
+                      "gnu/packages/statistics.scm")))
 
 (define-team sugar
   (team 'sugar
@@ -670,24 +1007,29 @@ the \"texlive\" importer."
 
 
 (define-member (person "Eric Bavier"
-                       "bavier@posteo.net")
+                       "bavier@posteo.net"
+                       "bavier")
   science)
 
 (define-member (person "Lars-Dominik Braun"
-                       "lars@6xq.net")
+                       "lars@6xq.net"
+                       "ldb")
   python haskell)
 
 (define-member (person "Jonathan Brielmaier"
-                       "jonathan.brielmaier@web.de")
+                       "jonathan.brielmaier@web.de"
+                       "jonsger")
   mozilla)
 
 (define-member (person "Ludovic Courtès"
-                       "ludo@gnu.org")
+                       "ludo@gnu.org"
+                       "civodul")
   core home bootstrap core-packages installer
   documentation mentors)
 
 (define-member (person "Andreas Enge"
-                       "andreas@enge.fr")
+                       "andreas@enge.fr"
+                       "enge")
   bootstrap core-packages lxqt science tex)
 
 (define-member (person "Tanguy Le Carrour"
@@ -695,59 +1037,73 @@ the \"texlive\" importer."
   python home)
 
 (define-member (person "Tobias Geerinckx-Rice"
-                       "me@tobias.gr")
+                       "me@tobias.gr"
+                       "nckx")
   core mentors)
 
 (define-member (person "Steve George"
-                       "steve@futurile.net")
+                       "steve@futurile.net"
+                       "futurile")
   rust)
 
 (define-member (person "Leo Famulari"
-                       "leo@famulari.name")
+                       "leo@famulari.name"
+                       "lfam")
   kernel)
 
 (define-member (person "Efraim Flashner"
-                       "efraim@flashner.co.il")
+                       "efraim@flashner.co.il"
+                       "efraim")
   embedded bootstrap rust)
 
 (define-member (person "jgart"
-                       "jgart@dismail.de")
+                       "jgart@dismail.de"
+                       "jgart")
   lisp mentors)
 
 (define-member (person "Guillaume Le Vaillant"
-                       "glv@posteo.net")
+                       "glv@posteo.net"
+                       "glv")
   lisp)
 
 (define-member (person "Julien Lepiller"
-                       "julien@lepiller.eu")
+                       "julien@lepiller.eu"
+                       "roptat")
   java ocaml translations)
 
 (define-member (person "Philip McGrath"
-                       "philip@philipmcgrath.com")
+                       "philip@philipmcgrath.com"
+                       "LiberalArtist")
   racket)
 
 (define-member (person "Mathieu Othacehe"
-                       "othacehe@gnu.org")
+                       "othacehe@gnu.org"
+                       "mothacehe")
   core installer mentors)
 
 (define-member (person "Florian Pelz"
-                       "pelzflorian@pelzflorian.de")
+                       "pelzflorian@pelzflorian.de"
+                       "pelzflorian")
   translations)
 
 (define-member (person "Liliana Marie Prikler"
-                       "liliana.prikler@gmail.com")
+                       "liliana.prikler@gmail.com"
+                       "lilyp")
   emacs games gnome)
 
 (define-member (person "Ricardo Wurmus"
-                       "rekado@elephly.net")
+                       "rekado@elephly.net"
+                       "rekado")
   r sugar)
 
 (define-member (person "Christopher Baines"
-                       "guix@cbaines.net")
+                       "guix@cbaines.net"
+                       "cbaines")
   core mentors ruby)
 
 (define-member (person "Andrew Tropin"
-                       "andrew@trop.in")
+                       "andrew@trop.in"
+                       "abcdw")
   home emacs)
 
 (define-member (person "pukkamustard"
@@ -767,19 +1123,23 @@ the \"texlive\" importer."
   julia core mentors r)
 
 (define-member (person "宋文武"
-                       "iyzsong@envs.net")
+                       "iyzsong@envs.net"
+                       "iyzsong")
   games localization lxqt qt xfce)
 
 (define-member (person "Vagrant Cascadian"
-                       "vagrant@debian.org")
+                       "vagrant@debian.org"
+                       "vagrantc")
   embedded)
 
-(define-member (person "Vagrant Cascadian"
-                       "vagrant@reproducible-builds.org")
+(define-member (person "Vagrant Cascadian"        ;XXX: duplicate
+                       "vagrant@reproducible-builds.org"
+                       "vagrantc")
   reproduciblebuilds)
 
 (define-member (person "Maxim Cournoyer"
-                       "maxim.cournoyer@gmail.com")
+                       "maxim.cournoyer@gmail.com"
+                       "apteryx")
   documentation gnome qt telephony electronics)
 
 (define-member (person "Katherine Cox-Buday"
@@ -787,35 +1147,42 @@ the \"texlive\" importer."
   emacs go lisp)
 
 (define-member (person "Munyoki Kilyungi"
-                       "me@bonfacemunyoki.com")
+                       "me@bonfacemunyoki.com"
+                       "BonfaceKilz")
   python lisp)
 
 (define-member (person "Gabriel Wicki"
-                       "gabriel@erlikon.ch")
+                       "gabriel@erlikon.ch"
+                       "gabber")
   audio documentation electronics embedded)
 
 (define-member (person "Ekaitz Zarraga"
-                       "ekaitz@elenq.tech")
+                       "ekaitz@elenq.tech"
+                       "ekaitz-zarraga")
   bootstrap zig electronics)
 
 (define-member (person "Divya Ranjan Pattanaik"
-                       "divya@subvertising.org")
+                       "divya@subvertising.org"
+                       "divyaranjan")
   emacs rust haskell)
 
 (define-member (person "Clément Lassieur"
-                       "clement@lassieur.org")
+                       "clement@lassieur.org"
+                       "snape")
   mozilla)
 
 (define-member (person "Sharlatan Hellseher"
-                       "sharlatanus@gmail.com")
-  go lisp python science sysadmin)
+                       "sharlatanus@gmail.com"
+                       "Hellseher")
+  go julia python science sysadmin)
 
 (define-member (person "Vivien Kraus"
                        "vivien@planete-kraus.eu")
   gnome)
 
 (define-member (person "Mark H Weaver"
-                       "mhw@netris.org")
+                       "mhw@netris.org"
+                       "mhw")
   mozilla)
 
 (define-member (person "Adam Faiz"
@@ -827,23 +1194,28 @@ the \"texlive\" importer."
   r)
 
 (define-member (person "Nicolas Goaziou"
-                       "guix@nicolasgoaziou.fr")
+                       "guix@nicolasgoaziou.fr"
+                       "ngz")
   tex)
 
 (define-member (person "André Batista"
-                       "nandre@riseup.net")
+                       "nandre@riseup.net"
+                       "madage")
   mozilla)
 
 (define-member (person "Janneke Nieuwenhuizen"
-                       "janneke@gnu.org")
+                       "janneke@gnu.org"
+                       "janneke")
   bootstrap core-packages home hurd installer)
 
 (define-member (person "Ian Eure"
-                       "ian@retrospec.tv")
+                       "ian@retrospec.tv"
+                       "ieure")
   mozilla emacs)
 
 (define-member (person "Zheng Junjie"
-                       "z572@z572.online")
+                       "z572@z572.online"
+                       "Z572")
   core-packages qt kde)
 
 (define-member (person "Sughosha"
@@ -851,23 +1223,28 @@ the \"texlive\" importer."
   kde)
 
 (define-member (person "Jelle Licht"
-                       "jlicht@fsfe.org")
+                       "jlicht@fsfe.org"
+                       "jlicht")
   javascript)
 
 (define-member (person "Cayetano Santos"
-                       "csantosb@inventati.org")
+                       "csantosb@inventati.org"
+                       "csantosb")
   emacs electronics)
 
 (define-member (person "Greg Hogan"
-                       "code@greghogan.com")
+                       "code@greghogan.com"
+                       "greghogan")
   c++)
 
 (define-member (person "Hilton Chain"
-                       "hako@ultrarare.space")
+                       "hako@ultrarare.space"
+                       "hako")
   emacs home localization mozilla rust zig)
 
 (define-member (person "Noé Lopez"
-                       "noelopez@free.fr")
+                       "noelopez@free.fr"
+                       "Baleine")
   gnome)
 
 (define-member (person "Ashvith Shetty"
@@ -877,6 +1254,26 @@ the \"texlive\" importer."
 (define-member (person "Trevor Richards"
                        "trev@trevdev.ca")
   lisp emacs)
+
+(define-member (person "Konrad Hinsen"
+                       "guix@khinsen.fastmail.net"
+                       "khinsen")
+  lisp)
+
+(define-member (person "Vinicius Monego"
+                       "monego@posteo.net"
+                       "monego")
+  python science)
+
+(define-member (person "Nicolas Graves"
+                       "ngraves@ngraves.fr"
+                       "ngraves")
+  javascript python ruby)
+
+(define-member (person "Yelninei"
+                       "yelninei@tutamail.com"
+                       "Yelninei")
+  hurd)
 
 
 (define (find-team name)
@@ -1024,13 +1421,32 @@ and REV-END, two git revision strings."
        (find-team-by-scope (apply diff-revisions
                                   (git-patch->revisions patch-file)))))
 
+(define (team-id->forgejo-id id)
+  "Return a name (string) suitable as a Forgejo team name."
+  (define valid                                   ;"AlphaDashDot"
+    (char-set-union char-set:ascii (char-set #\-) (char-set #\.)))
+
+  (define (valid? chr)
+    (char-set-contains? valid chr))
+
+  (string-map (match-lambda
+                (#\+ #\p)                         ;special case for "c++"
+                ((? valid? chr) chr)
+                (_ #\-))
+              (symbol->string id)))
+
 (define (team->codeowners-snippet team)
   (string-join (map (lambda (scope)
                       (format #f "~50a @guix/~a"
                               (if (regexp*? scope)
-                                  (regexp*-pattern scope)
+                                  (let ((regexp (regexp*-pattern scope)))
+                                    ;; Caret may not match as expected in
+                                    ;; 'CODEOWNERS' so drop it.
+                                    (if (string-prefix? "^" regexp)
+                                        (string-drop regexp 1)
+                                        regexp))
                                   (regexp-quote scope))
-                              (team-id team)))
+                              (team-id->forgejo-id (team-id team))))
                     (team-scope team))
                "\n"
                'suffix))
@@ -1087,6 +1503,8 @@ and REV-END, two git revision strings."
      (list-teams team-names))
     (("codeowners")
      (export-codeowners (current-output-port)))
+    (("sync-codeberg-teams" token)
+     (synchronize-teams token))
     (anything
      (format (current-error-port)
              "Usage: etc/teams.scm <command> [<args>]
@@ -1107,6 +1525,10 @@ Commands:
   get-maintainer <patch>
       compatibility mode with Linux get_maintainer.pl
   show <team-name>
-      display <team-name> properties~%"))))
+      display <team-name> properties
+  codeowners
+      write a 'CODEOWNERS' file suitable for Codeberg on standard output
+  sync-codeberg-teams <token>
+      create or update the list of teams at Codeberg~%"))))
 
 (apply main (cdr (command-line)))

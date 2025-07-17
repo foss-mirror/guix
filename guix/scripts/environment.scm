@@ -63,6 +63,7 @@
   #:use-module (srfi srfi-98)
   #:export (assert-container-features
             load-manifest
+            launch-environment/container
             guix-environment
             guix-environment*
             show-environment-options-help
@@ -934,6 +935,9 @@ WHILE-LIST."
                         ((variable . value)
                          (setenv variable value)))
                       environ)
+
+            (unless (getenv "LANG")
+              (setenv "LANG" "C.UTF-8"))
 
             (primitive-exit/status
              ;; A container's environment is already purified, so no need to

@@ -36,6 +36,7 @@
 ;;; Copyright © 2023 Bruno Victal <mirai@makinata.eu>
 ;;; Copyright © 2024 Nicolas Graves <ngraves@ngraves.fr>
 ;;; Copyright © 2024 gemmaro <gemmaro.dev@gmail.com>
+;;; Copyright © 2025 Antoine Côté <antoine.cote@posteo.net>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -178,14 +179,14 @@ things the parser might find in the XML document (like start tags).")
 (define-public libebml
   (package
     (name "libebml")
-    (version "1.4.4")
+    (version "1.4.5")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://dl.matroska.org/downloads/libebml/"
                            "libebml-" version ".tar.xz"))
        (sha256
-        (base32 "19w74q2makq4qz1cjsrlbzglwfhb4497bvbnxq539jbc6n1mzp42"))))
+        (base32 "06r2md4jysp5q5lx108vgv8b7c596zhh7wr6sk12knlj0l5n8wa9"))))
     (build-system cmake-build-system)
     (arguments
      `(#:configure-flags
@@ -1288,7 +1289,8 @@ UTF-8 and UTF-16 encoding.")
               (sha256
                (base32
                 "14smciid19lvkxqznfig77jxn5s4iq3jpb47vh5a6zcaqp7gvg8m"))
-              (patches (search-patches "tinyxml-use-stl.patch"))))
+              (patches (search-patches "tinyxml-use-stl.patch"
+                                       "tinyxml-CVE-2023-34194.patch"))))
     (build-system gnu-build-system)
     ;; This library is missing *a lot* of the steps to make it usable, so we
     ;; have to add them here, like every other distro must do.

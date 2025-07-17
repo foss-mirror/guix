@@ -3884,6 +3884,59 @@ values that are guaranteed to be safe, by construction or by escaping or
 sanitization, to use in various HTML contexts and with various DOM APIs.")
     (license license:bsd-3)))
 
+(define-public go-github-com-gopacket-gopacket
+  (package
+    (name "go-github-com-gopacket-gopacket")
+    (version "1.3.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/gopacket/gopacket")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "10kjn30chywh010zys92idlsfg4kff7amnsnyv1a72mi56107jb8"))))
+    (build-system go-build-system)
+    (arguments
+     (list
+      #:import-path "github.com/gopacket/gopacket"
+      #:test-flags
+      #~(list "-skip" (string-join
+                       ;; Tests require network setup or root access.
+                       (list "TestEthernetHandle_Close_WithCancel"
+                             "TestEthernetHandle_Close_WithTimeout"
+                             "TestNgWriterDSB"
+                             "TestRouting")
+                       "|"))
+      ;; TODO: Full tests suite and build requires
+      ;; <https://github.com/ntop/PF_RING>>, run just top level ones.
+      #:test-subdirs #~(list ".")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'remove-examples
+            (lambda* (#:key tests? import-path #:allow-other-keys)
+              (with-directory-excursion (string-append "src/" import-path)
+                (delete-file-recursively "examples"))))
+          (add-after 'check 'remove-dump-data
+            (lambda* (#:key tests? import-path #:allow-other-keys)
+              (with-directory-excursion (string-append "src/" import-path)
+                (for-each delete-file
+                          (find-files "." ".*\\.(pcamp|pcapng)$"))))))))
+    (native-inputs
+     (list go-github-com-vishvananda-netlink
+           go-github-com-vishvananda-netns))
+    (propagated-inputs
+     (list ;; libpcap
+           ;; pf-ring ; <https://github.com/ntop/PF_RING>
+           go-golang-org-x-net
+           go-golang-org-x-sys))
+    (home-page "https://github.com/gopacket/gopacket")
+    (synopsis "Packet processing capabilities for Golang")
+    (description
+     "Package gopacket provides packet decoding for the Go language.")
+    (license license:bsd-3)))
+
 (define-public go-github-com-gorilla-context
   (let ((commit "08b5f424b9271eedf6f9f0ce86cb9396ed337a42")
         (revision "0"))
@@ -9872,6 +9925,35 @@ lists)
      "Package opencensus contains Go support for @code{OpenCensus}.")
     (license license:asl2.0)))
 
+(define-public go-go-opentelemetry-io-contrib
+  (package
+    (name "go-go-opentelemetry-io-contrib")
+    (version "1.35.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/open-telemetry/opentelemetry-go-contrib")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1gnhccl9fkyqr4kp8by3cqzsc1w88h1ghxikdh5fpwnvsdqzqy9q"))))
+    (build-system go-build-system)
+    (arguments
+     (list
+      #:go go-1.22
+      #:import-path "go.opentelemetry.io/contrib"
+      #:tests? #f))
+    (native-inputs (list go-github-com-stretchr-testify))
+    (propagated-inputs (list go-github-com-felixge-httpsnoop))
+    (home-page "https://go.opentelemetry.io/contrib")
+    (synopsis "OpenTelemetry-Go Contrib")
+    (description
+     "Package contrib is a collection of extensions for the opentelemetry-go project.
+It provides 3rd party resource detectors, propagators, samplers, bridges, and
+instrumentation as submodules.")
+    (license license:asl2.0)))
+
 (define-public go-go-opentelemetry-io-contrib-instrumentation-net-http-otelhttp
   (package
     (name "go-go-opentelemetry-io-contrib-instrumentation-net-http-otelhttp")
@@ -10768,7 +10850,7 @@ protocol.")
 (define-public lyrebird
   (package
     (name "lyrebird")
-    (version "0.6.0")
+    (version "0.6.1")
     (source
      (origin
        (method git-fetch)
@@ -10777,11 +10859,11 @@ protocol.")
              (commit (string-append "lyrebird-" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1hhilnk72s0h3cm7zw89n3kiqwa32c0r1a1y5ygp432hmrxvr2b0"))))
+        (base32 "1wmcr2ywzp38z7p8gqb0r4wpsz1f67fn3dln9pswcjscvgm251pj"))))
     (build-system go-build-system)
     (arguments
      (list
-      #:go go-1.22
+      #:go go-1.23
       #:build-flags #~(list (string-append "-ldflags="
                                            "-X main.lyrebirdVersion="
                                            #$version " -s -w"))

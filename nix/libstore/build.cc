@@ -9,10 +9,12 @@
 #include "archive.hh"
 #include "affinity.hh"
 #include "builtins.hh"
+#include "spawn.hh"
 
 #include <map>
 #include <sstream>
 #include <algorithm>
+#include <regex>
 
 #include <limits.h>
 #include <time.h>
@@ -72,10 +74,25 @@
 #endif
 
 #if CHROOT_ENABLED
-#include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
-#include <netinet/ip.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <net/route.h>
+#include <arpa/inet.h>
+#if __linux__
+#include <linux/if_tun.h>
+/* This header isn't documented in 'man netdevice', but there doesn't seem to
+   be any other way to get 'struct in6_ifreq'... */
+#include <linux/ipv6.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <seccomp.hh>
+
+/* Set to 1 to debug the seccomp filter.  */
+#define DEBUG_SECCOMP_FILTER 0
+
+#endif
 #endif
 
 #if __linux__
@@ -103,7 +120,7 @@ typedef std::shared_ptr<Goal> GoalPtr;
 typedef std::weak_ptr<Goal> WeakGoalPtr;
 
 struct CompareGoalPtrs {
-    bool operator() (const GoalPtr & a, const GoalPtr & b);
+    bool operator() (const GoalPtr & a, const GoalPtr & b) const;
 };
 
 /* Set of goals. */
@@ -201,7 +218,7 @@ protected:
 };
 
 
-bool CompareGoalPtrs::operator() (const GoalPtr & a, const GoalPtr & b) {
+bool CompareGoalPtrs::operator() (const GoalPtr & a, const GoalPtr & b) const {
     string s1 = a->key();
     string s2 = b->key();
     return s1 < s2;
@@ -336,9 +353,9 @@ void addToWeakGoals(WeakGoals & goals, GoalPtr p)
 {
     // FIXME: necessary?
     // FIXME: O(n)
-    foreach (WeakGoals::iterator, i, goals)
-        if (i->lock() == p) return;
-    goals.push_back(p);
+    bool b = std::none_of(goals.begin(), goals.end(),
+        [p](WeakGoalPtr i) { return i.lock() == p; });
+    if (b) goals.push_back(p); else return;
 }
 
 
@@ -367,11 +384,11 @@ void Goal::waiteeDone(GoalPtr waitee, ExitCode result)
 
         /* If we failed and keepGoing is not set, we remove all
            remaining waitees. */
-        foreach (Goals::iterator, i, waitees) {
-            GoalPtr goal = *i;
+        for (auto& i : waitees) {
+            GoalPtr goal = i;
             WeakGoals waiters2;
-            foreach (WeakGoals::iterator, j, goal->waiters)
-                if (j->lock() != shared_from_this()) waiters2.push_back(*j);
+            for (auto& j : goal->waiters)
+                if (j.lock() != shared_from_this()) waiters2.push_back(j);
             goal->waiters = waiters2;
         }
         waitees.clear();
@@ -387,8 +404,8 @@ void Goal::amDone(ExitCode result)
     assert(exitCode == ecBusy);
     assert(result == ecSuccess || result == ecFailed || result == ecNoSubstituters || result == ecIncompleteClosure);
     exitCode = result;
-    foreach (WeakGoals::iterator, i, waiters) {
-        GoalPtr goal = i->lock();
+    for (auto& i : waiters) {
+        GoalPtr goal = i.lock();
         if (goal) goal->waiteeDone(shared_from_this(), result);
     }
     waiters.clear();
@@ -399,22 +416,6 @@ void Goal::amDone(ExitCode result)
 void Goal::trace(const format & f)
 {
     debug(format("%1%: %2%") % name % f);
-}
-
-
-
-//////////////////////////////////////////////////////////////////////
-
-
-/* Restore default handling of SIGPIPE, otherwise some programs will
-   randomly say "Broken pipe". */
-static void restoreSIGPIPE()
-{
-    struct sigaction act, oact;
-    act.sa_handler = SIG_DFL;
-    act.sa_flags = 0;
-    sigemptyset(&act.sa_mask);
-    if (sigaction(SIGPIPE, &act, &oact)) throw SysError("resetting SIGPIPE");
 }
 
 
@@ -498,13 +499,13 @@ void UserLock::acquire()
 
     /* Find a user account that isn't currently in use for another
        build. */
-    foreach (Strings::iterator, i, users) {
-        debug(format("trying user `%1%'") % *i);
+    for (auto& i : users) {
+        debug(format("trying user `%1%'") % i);
 
-        struct passwd * pw = getpwnam(i->c_str());
+        struct passwd * pw = getpwnam(i.c_str());
         if (!pw)
             throw Error(format("the user `%1%' in the group `%2%' does not exist")
-                % *i % settings.buildUsersGroup);
+                % i % settings.buildUsersGroup);
 
         createDirs(settings.nixStateDir + "/userpool");
 
@@ -522,7 +523,7 @@ void UserLock::acquire()
         if (lockFile(fd, ltWrite, false)) {
             fdUserLock = fd.borrow();
             lockedPaths.insert(fnUserLock);
-            user = *i;
+            user = i;
             uid = pw->pw_uid;
 
             /* Sanity check... */
@@ -576,12 +577,12 @@ typedef map<string, string> HashRewrites;
 
 string rewriteHashes(string s, const HashRewrites & rewrites)
 {
-    foreach (HashRewrites::const_iterator, i, rewrites) {
-        assert(i->first.size() == i->second.size());
+    for (auto& i : rewrites) {
+        assert(i.first.size() == i.second.size());
         size_t j = 0;
-        while ((j = s.find(i->first, j)) != string::npos) {
+        while ((j = s.find(i.first, j)) != string::npos) {
             debug(format("rewriting @ %1%") % j);
-            s.replace(j, i->second.size(), i->second);
+            s.replace(j, i.second.size(), i.second);
         }
     }
     return s;
@@ -676,14 +677,12 @@ private:
     /* Whether this is a fixed-output derivation. */
     bool fixedOutput;
 
+    /* PID of the 'slirp4netns' process in case of a fixed-output
+       derivation.  */
+    Pid slirp;
+
     typedef void (DerivationGoal::*GoalState)();
     GoalState state;
-
-    /* Stuff we need to pass to runChild(). */
-    typedef map<Path, Path> DirsInChroot; // maps target path to source path
-    DirsInChroot dirsInChroot;
-    typedef map<string, string> Environment;
-    Environment env;
 
     /* Hash rewriting. */
     HashRewrites rewritesToTmp, rewritesFromTmp;
@@ -753,14 +752,9 @@ private:
     /* Start building a derivation. */
     void startBuilder();
 
-    /* Run the builder's process. */
-    void runChild();
+    void execBuilderOrBuiltin(SpawnContext &);
 
-    friend int childEntry(void *);
-
-    /* Pipe to notify readiness to the child process when using unprivileged
-       user namespaces.  */
-    Pipe readiness;
+    friend void execBuilderOrBuiltinAction(SpawnContext &);
 
     /* Check that the derivation outputs all exist and register them
        as valid. */
@@ -857,6 +851,10 @@ void DerivationGoal::killChild()
 	worker.childTerminated(hook->pid);
     }
     hook.reset();
+
+    if (slirp != -1)
+	/* Terminate the 'slirp4netns' process.  */
+	slirp.kill();
 }
 
 
@@ -884,9 +882,9 @@ void DerivationGoal::addWantedOutputs(const StringSet & outputs)
         wantedOutputs.clear();
         needRestart = true;
     } else
-        foreach (StringSet::const_iterator, i, outputs)
-            if (wantedOutputs.find(*i) == wantedOutputs.end()) {
-                wantedOutputs.insert(*i);
+        for (const auto& i : outputs)
+            if (wantedOutputs.find(i) == wantedOutputs.end()) {
+                wantedOutputs.insert(i);
                 needRestart = true;
             }
 }
@@ -933,8 +931,8 @@ void DerivationGoal::haveDerivation()
     /* Get the derivation. */
     drv = derivationFromPath(worker.store, drvPath);
 
-    foreach (DerivationOutputs::iterator, i, drv.outputs)
-        worker.store.addTempRoot(i->second.path);
+    for (auto& i : drv.outputs)
+        worker.store.addTempRoot(i.second.path);
 
     /* Check what outputs paths are not already valid. */
     PathSet invalidOutputs = checkPathValidity(false, buildMode == bmRepair);
@@ -947,15 +945,15 @@ void DerivationGoal::haveDerivation()
 
     /* Check whether any output previously failed to build.  If so,
        don't bother. */
-    foreach (PathSet::iterator, i, invalidOutputs)
-        if (pathFailed(*i)) return;
+    for (auto& i : invalidOutputs)
+        if (pathFailed(i)) return;
 
     /* We are first going to try to create the invalid output paths
        through substitutes.  If that doesn't work, we'll build
        them. */
     if (settings.useSubstitutes && substitutesAllowed(drv))
-        foreach (PathSet::iterator, i, invalidOutputs)
-            addWaitee(worker.makeSubstitutionGoal(*i, buildMode == bmRepair));
+        for (auto& i : invalidOutputs)
+            addWaitee(worker.makeSubstitutionGoal(i, buildMode == bmRepair));
 
     if (waitees.empty()) /* to prevent hang (no wake-up event) */
         outputsSubstituted();
@@ -1004,11 +1002,11 @@ void DerivationGoal::outputsSubstituted()
     wantedOutputs = PathSet();
 
     /* The inputs must be built before we can build this goal. */
-    foreach (DerivationInputs::iterator, i, drv.inputDrvs)
-        addWaitee(worker.makeDerivationGoal(i->first, i->second, buildMode == bmRepair ? bmRepair : bmNormal));
+    for (auto& i : drv.inputDrvs)
+        addWaitee(worker.makeDerivationGoal(i.first, i.second, buildMode == bmRepair ? bmRepair : bmNormal));
 
-    foreach (PathSet::iterator, i, drv.inputSrcs)
-        addWaitee(worker.makeSubstitutionGoal(*i));
+    for (auto& i : drv.inputSrcs)
+        addWaitee(worker.makeSubstitutionGoal(i));
 
     if (waitees.empty()) /* to prevent hang (no wake-up event) */
         inputsRealised();
@@ -1026,14 +1024,14 @@ void DerivationGoal::repairClosure()
 
     /* Get the output closure. */
     PathSet outputClosure;
-    foreach (DerivationOutputs::iterator, i, drv.outputs) {
-        if (!wantOutput(i->first, wantedOutputs)) continue;
-        computeFSClosure(worker.store, i->second.path, outputClosure);
+    for (auto& i : drv.outputs) {
+        if (!wantOutput(i.first, wantedOutputs)) continue;
+        computeFSClosure(worker.store, i.second.path, outputClosure);
     }
 
     /* Filter out our own outputs (which we have already checked). */
-    foreach (DerivationOutputs::iterator, i, drv.outputs)
-        outputClosure.erase(i->second.path);
+    for (auto& i : drv.outputs)
+        outputClosure.erase(i.second.path);
 
     /* Get all dependencies of this derivation so that we know which
        derivation is responsible for which path in the output
@@ -1041,21 +1039,21 @@ void DerivationGoal::repairClosure()
     PathSet inputClosure;
     computeFSClosure(worker.store, drvPath, inputClosure);
     std::map<Path, Path> outputsToDrv;
-    foreach (PathSet::iterator, i, inputClosure)
-        if (isDerivation(*i)) {
-            Derivation drv = derivationFromPath(worker.store, *i);
-            foreach (DerivationOutputs::iterator, j, drv.outputs)
-                outputsToDrv[j->second.path] = *i;
+    for (auto& i : inputClosure)
+        if (isDerivation(i)) {
+            Derivation drv = derivationFromPath(worker.store, i);
+            for (auto& j : drv.outputs)
+                outputsToDrv[j.second.path] = i;
         }
 
     /* Check each path (slow!). */
     PathSet broken;
-    foreach (PathSet::iterator, i, outputClosure) {
-        if (worker.store.pathContentsGood(*i)) continue;
-        printMsg(lvlError, format("found corrupted or missing path `%1%' in the output closure of `%2%'") % *i % drvPath);
-        Path drvPath2 = outputsToDrv[*i];
+    for (auto& i : outputClosure) {
+        if (worker.store.pathContentsGood(i)) continue;
+        printMsg(lvlError, format("found corrupted or missing path `%1%' in the output closure of `%2%'") % i % drvPath);
+        Path drvPath2 = outputsToDrv[i];
         if (drvPath2 == "")
-            addWaitee(worker.makeSubstitutionGoal(*i, true));
+            addWaitee(worker.makeSubstitutionGoal(i, true));
         else
             addWaitee(worker.makeDerivationGoal(drvPath2, PathSet(), bmRepair));
     }
@@ -1099,32 +1097,32 @@ void DerivationGoal::inputsRealised()
        running the build hook. */
 
     /* The outputs are referenceable paths. */
-    foreach (DerivationOutputs::iterator, i, drv.outputs) {
-        debug(format("building path `%1%'") % i->second.path);
-        allPaths.insert(i->second.path);
+    for (auto& i : drv.outputs) {
+        debug(format("building path `%1%'") % i.second.path);
+        allPaths.insert(i.second.path);
     }
 
     /* Determine the full set of input paths. */
 
     /* First, the input derivations. */
-    foreach (DerivationInputs::iterator, i, drv.inputDrvs) {
+    for (auto& i : drv.inputDrvs) {
         /* Add the relevant output closures of the input derivation
            `*i' as input paths.  Only add the closures of output paths
            that are specified as inputs. */
-        assert(worker.store.isValidPath(i->first));
-        Derivation inDrv = derivationFromPath(worker.store, i->first);
-        foreach (StringSet::iterator, j, i->second)
-            if (inDrv.outputs.find(*j) != inDrv.outputs.end())
-                computeFSClosure(worker.store, inDrv.outputs[*j].path, inputPaths);
+        assert(worker.store.isValidPath(i.first));
+        Derivation inDrv = derivationFromPath(worker.store, i.first);
+        for (auto& j : i.second)
+            if (inDrv.outputs.find(j) != inDrv.outputs.end())
+                computeFSClosure(worker.store, inDrv.outputs[j].path, inputPaths);
             else
                 throw Error(
                     format("derivation `%1%' requires non-existent output `%2%' from input derivation `%3%'")
-                    % drvPath % *j % i->first);
+                    % drvPath % j % i.first);
     }
 
     /* Second, the input sources. */
-    foreach (PathSet::iterator, i, drv.inputSrcs)
-        computeFSClosure(worker.store, *i, inputPaths);
+    for (auto& i : drv.inputSrcs)
+        computeFSClosure(worker.store, i, inputPaths);
 
     debug(format("added input paths %1%") % showPaths(inputPaths));
 
@@ -1186,10 +1184,10 @@ void DerivationGoal::tryToBuild()
        (It can't happen between here and the lockPaths() call below
        because we're not allowing multi-threading.)  If so, put this
        goal to sleep until another goal finishes, then try again. */
-    foreach (DerivationOutputs::iterator, i, drv.outputs)
-        if (pathIsLockedByMe(i->second.path)) {
+    for (auto& i : drv.outputs)
+        if (pathIsLockedByMe(i.second.path)) {
             debug(format("putting derivation `%1%' to sleep because `%2%' is locked by another goal")
-                % drvPath % i->second.path);
+                % drvPath % i.second.path);
             worker.waitForAnyGoal(shared_from_this());
             return;
         }
@@ -1222,12 +1220,12 @@ void DerivationGoal::tryToBuild()
 
     missingPaths = outputPaths(drv);
     if (buildMode != bmCheck)
-        foreach (PathSet::iterator, i, validPaths) missingPaths.erase(*i);
+        for (auto& i : validPaths) missingPaths.erase(i);
 
     /* If any of the outputs already exist but are not valid, delete
        them. */
-    foreach (DerivationOutputs::iterator, i, drv.outputs) {
-        Path path = i->second.path;
+    for (auto& i : drv.outputs) {
+        Path path = i.second.path;
         if (worker.store.isValidPath(path)) continue;
         if (!pathExists(path)) continue;
         debug(format("removing invalid path `%1%'") % path);
@@ -1237,8 +1235,8 @@ void DerivationGoal::tryToBuild()
     /* Check again whether any output previously failed to build,
        because some other process may have tried and failed before we
        acquired the lock. */
-    foreach (DerivationOutputs::iterator, i, drv.outputs)
-        if (pathFailed(i->second.path)) return;
+    for (auto& i : drv.outputs)
+        if (pathFailed(i.second.path)) return;
 
     /* Don't do a remote build if the derivation has the attribute
        `preferLocalBuild' set.  Also, check and repair modes are only
@@ -1415,11 +1413,11 @@ void DerivationGoal::buildDone()
             /* Move paths out of the chroot for easier debugging of
                build failures. */
             if (useChroot && buildMode == bmNormal)
-                foreach (PathSet::iterator, i, missingPaths)
-                    if (pathExists(chrootRootDir + *i)) {
+                for (auto& i : missingPaths)
+                    if (pathExists(chrootRootDir + i)) {
                       try {
-                        secureFilePerms(chrootRootDir + *i);
-                        rename((chrootRootDir + *i).c_str(), i->c_str());
+                        secureFilePerms(chrootRootDir + i);
+                        rename((chrootRootDir + i).c_str(), i.c_str());
                       } catch(Error & e) {
                         printMsg(lvlError, e.msg());
                       }
@@ -1436,8 +1434,8 @@ void DerivationGoal::buildDone()
 	    /* Replace the output, if it exists, by a fresh copy of itself to
                make sure that there's no stale file descriptor pointing to it
                (CVE-2024-27297).  */
-	    foreach (DerivationOutputs::iterator, i, drv.outputs) {
-		Path output = chrootRootDir + i->second.path;
+	    for (auto& i : drv.outputs) {
+		Path output = chrootRootDir + i.second.path;
 		if (pathExists(output)) {
 		    Path pivot = output + ".tmp";
 		    copyFileRecursively(output, pivot, true);
@@ -1454,8 +1452,8 @@ void DerivationGoal::buildDone()
         registerOutputs();
 
         /* Delete unused redirected outputs (when doing hash rewriting). */
-        foreach (RedirectedOutputs::iterator, i, redirectedOutputs)
-            if (pathExists(i->second)) deletePath(i->second);
+        for (auto& i : redirectedOutputs)
+            if (pathExists(i.second)) deletePath(i.second);
 
         /* Delete the chroot (if we were using one). */
         autoDelChroot.reset(); /* this runs the destructor */
@@ -1516,8 +1514,8 @@ void DerivationGoal::buildDone()
                Hook errors (like communication problems with the
                remote machine) shouldn't be cached either. */
             if (settings.cacheFailure && !fixedOutput && !diskFull)
-                foreach (DerivationOutputs::iterator, i, drv.outputs)
-                    worker.store.registerFailedPath(i->second.path);
+                for (auto& i : drv.outputs)
+                    worker.store.registerFailedPath(i.second.path);
         }
 
         done(st, e.msg());
@@ -1554,7 +1552,7 @@ HookReply DerivationGoal::tryBuildHook()
        required from the build machine.  (The hook could parse the
        drv file itself, but this is easier.) */
     Strings features = tokenizeString<Strings>(get(drv.env, "requiredSystemFeatures"));
-    foreach (Strings::iterator, i, features) checkStoreName(*i); /* !!! abuse */
+    for (auto& i : features) checkStoreName(i); /* !!! abuse */
 
     /* Send the request to the hook. */
     writeLine(worker.hook->toAgent.writeSide, (format("%1% %2% %3% %4%")
@@ -1596,13 +1594,13 @@ HookReply DerivationGoal::tryBuildHook()
     computeFSClosure(worker.store, drvPath, allInputs);
 
     string s;
-    foreach (PathSet::iterator, i, allInputs) { s += *i; s += ' '; }
+    for (auto& i : allInputs) { s += i; s += ' '; }
     writeLine(hook->toAgent.writeSide, s);
 
     /* Tell the hooks the missing outputs that have to be copied back
        from the remote system. */
     s = "";
-    foreach (PathSet::iterator, i, missingPaths) { s += *i; s += ' '; }
+    for (auto& i : missingPaths) { s += i; s += ' '; }
     writeLine(hook->toAgent.writeSide, s);
 
     hook->toAgent.writeSide.close();
@@ -1630,13 +1628,6 @@ void chmod_(const Path & path, mode_t mode)
 }
 
 
-int childEntry(void * arg)
-{
-    ((DerivationGoal *) arg)->runChild();
-    return 1;
-}
-
-
 /* UID and GID of the build user inside its own user namespace.  */
 static const uid_t guestUID = 30001;
 static const gid_t guestGID = 30000;
@@ -1644,7 +1635,9 @@ static const gid_t guestGID = 30000;
 /* Initialize the user namespace of CHILD.  */
 static void initializeUserNamespace(pid_t child,
 				    uid_t hostUID = getuid(),
-				    gid_t hostGID = getgid())
+				    gid_t hostGID = getgid(),
+                                    uid_t guestUID = guestUID,
+                                    gid_t guestGID = guestGID)
 {
     writeFile("/proc/" + std::to_string(child) + "/uid_map",
 	      (format("%d %d 1") % guestUID % hostUID).str());
@@ -1654,6 +1647,748 @@ static void initializeUserNamespace(pid_t child,
     writeFile("/proc/" + std::to_string(child) + "/gid_map",
 	      (format("%d %d 1") % guestGID % hostGID).str());
 }
+
+#if CHROOT_ENABLED
+
+/* Creating TAP device for the fixed-output derivation build environment,
+   based on how slirp4netns does it.  send_fd_socket is a unix-domain socket
+   that a file descriptor for the TAP device will be sent on along with a
+   single null byte of regular data. */
+static void setupTap(int send_fd_socket, bool ipv6Enabled)
+{
+    AutoCloseFD tapfd;
+    struct ifreq ifr;
+    struct in6_ifreq ifr6;
+    char tapname[] = "tap0";
+    int ifindex;
+
+    tapfd = open("/dev/net/tun", O_RDWR);
+    if(tapfd < 0)
+        throw SysError("opening `/dev/net/tun'");
+
+    memset(&ifr, 0, sizeof(ifr));
+    ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
+    strncpy(ifr.ifr_name, tapname, sizeof(ifr.ifr_name) - 1);
+    if(ioctl(tapfd, TUNSETIFF, (void*)&ifr) < 0)
+        throw SysError("TUNSETIFF");
+
+    /* DAD is "duplicate address detection".  By default the kernel will put
+       any ipv6 addresses that we add into the "tentative" state, and only
+       after several seconds have been spent trying to chat with network
+       neighbors about whether anyone is already using the address will it
+       allow it to be bound to, whether for listening or for connecting.
+
+       This causes tcp connections initiated before then to bind to ::1, which
+       obviously is not a valid address for communication between hosts.  Even
+       after the real addresses leave the "tentative" state, the source address
+       used for the already-started connection attempt does not change.
+
+       In our situation we know for a fact nobody else is using the addresses
+       we give, so there's no point in waiting the extra several seconds to
+       perform DAD; disable it entirely instead.
+
+       Note: this needs to use conf/tap0/ instead of conf/all/ */
+    writeFile("/proc/sys/net/ipv6/conf/tap0/accept_dad", "0");
+
+    /* By default tap0 will solicit and receive router advertisements, and
+     * thereby obtain an ipv6 address from slirp4netns.  But if the host
+     * doesn't have a working ipv6 connection, this could mess things up for
+     * guest programs (and really the guest network stack itself), as they
+     * have no way of knowing that, and will therefore likely try connecting
+     * to addresses found in AAAA records, which will fail.  To prevent this,
+     * ignore router advertisements. */
+    writeFile("/proc/sys/net/ipv6/conf/tap0/accept_ra", "0");
+
+    /* Now set up:
+       1. tap0's active flags (so it's running, up, etc)
+       2. tap0's MTU
+       3. tap0's ip address
+       4. tap0's network mask
+       5. A default route to tap0 */
+    AutoCloseFD sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if(sockfd < 0)
+        throw SysError("creating socket");
+
+    AutoCloseFD sockfd6 = socket(AF_INET6, SOCK_DGRAM, 0);
+
+    if(sockfd6 < 0)
+        throw SysError("creating ipv6 socket");
+
+    if(ioctl(sockfd, SIOCGIFINDEX, &ifr) < 0)
+        throw SysError("getting tap0 ifindex");
+
+    ifindex = ifr.ifr_ifindex;
+
+    ifr.ifr_flags = IFF_UP | IFF_RUNNING;
+    if(ioctl(sockfd, SIOCSIFFLAGS, &ifr) < 0)
+        throw SysError("setting flags for tap0");
+
+    /* slirp4netns default */
+    ifr.ifr_mtu = 1500;
+    if(ioctl(sockfd, SIOCSIFMTU, &ifr) < 0)
+        throw SysError("setting MTU for tap0");
+
+    /* default network CIDR: 10.0.2.0/24, fd00::/64 */
+    /* default recommended_vguest: 10.0.2.100, fd00::??? (we choose to use
+       fd00::80 and fe80::80) */
+    /* default gateway: 10.0.2.2, fd00::2 */
+    struct sockaddr_in *sai = (struct sockaddr_in *) &ifr.ifr_addr;
+    sai->sin_family = AF_INET;
+    sai->sin_port = htonl(0);
+    if(inet_pton(AF_INET, "10.0.2.100", &sai->sin_addr) != 1)
+        throw Error("inet_pton failed");
+
+    if(ioctl(sockfd, SIOCSIFADDR, &ifr) < 0)
+        throw SysError("setting tap0 address");
+
+    if(ipv6Enabled) {
+        if(inet_pton(AF_INET6, "fd00::80", &ifr6.ifr6_addr) != 1)
+            throw Error("inet_pton failed");
+        ifr6.ifr6_prefixlen = 64;
+        ifr6.ifr6_ifindex = ifindex;
+
+        if(ioctl(sockfd6, SIOCSIFADDR, &ifr6) < 0)
+            throw SysError("setting tap0 ipv6 address");
+    }
+
+    /* Always set up the link-local address so that communication with the
+     * host loopback over ipv6 can be possible. */
+    if(inet_pton(AF_INET6, "fe80::80", &ifr6.ifr6_addr) != 1)
+        throw Error("inet_pton failed");
+    ifr6.ifr6_prefixlen = 64;
+    ifr6.ifr6_ifindex = ifindex;
+
+    if(ioctl(sockfd6, SIOCSIFADDR, &ifr6) < 0)
+        throw SysError("setting tap0 link-local ipv6 address");
+
+    if(inet_pton(AF_INET, "255.255.255.0", &sai->sin_addr) != 1)
+        throw Error("inet_pton failed");
+
+    if(ioctl(sockfd, SIOCSIFNETMASK, &ifr) < 0)
+        throw SysError("setting tap0 network mask");
+
+    /* To my knowledge there is no official documentation of SIOCADDRT and
+       struct rtentry for Linux aside from the Linux kernel source code as of
+       the year 2025.  This is therefore fully cargo-culted from
+       slirp4netns. */
+
+    struct rtentry route;
+    memset(&route, 0, sizeof(route));
+    sai = (struct sockaddr_in *)&route.rt_gateway;
+    sai->sin_family = AF_INET;
+    if(inet_pton(AF_INET, "10.0.2.2", &sai->sin_addr) != 1)
+        throw Error("inet_pton failed");
+    sai = (struct sockaddr_in *)&route.rt_dst;
+    sai->sin_family = AF_INET;
+    sai->sin_addr.s_addr = htonl(INADDR_ANY);
+    sai = (struct sockaddr_in *)&route.rt_genmask;
+    sai->sin_family = AF_INET;
+    sai->sin_addr.s_addr = htonl(INADDR_ANY);
+
+    route.rt_flags = RTF_UP | RTF_GATEWAY;
+    route.rt_metric = 0;
+    route.rt_dev = tapname;
+
+    if(ioctl(sockfd, SIOCADDRT, &route) < 0)
+        throw SysError("setting tap0 as default route");
+
+    struct in6_rtmsg route6;
+    memset(&route6, 0, sizeof(route6));
+    if(inet_pton(AF_INET6, "fd00::2", &route6.rtmsg_gateway) != 1)
+        throw Error("inet_pton failed");
+
+    if(ipv6Enabled) {
+        /* Set up a default gateway via slirp4netns */
+        route6.rtmsg_dst = IN6ADDR_ANY_INIT;
+        route6.rtmsg_dst_len = 0;
+        route6.rtmsg_flags = RTF_UP | RTF_GATEWAY;
+    } else {
+        /* Set up a route to slirp4netns, but only for talking to the host
+         * loopback */
+        if(inet_pton(AF_INET6, "fd00::2", &route6.rtmsg_dst) != 1)
+            throw Error("inet_pton failed");
+        route6.rtmsg_dst_len = 128;
+        route6.rtmsg_flags = RTF_UP;
+    }
+    route6.rtmsg_src = IN6ADDR_ANY_INIT;
+    route6.rtmsg_src_len = 0;
+    route6.rtmsg_ifindex = ifindex;
+    route6.rtmsg_metric = 1;
+
+    if(ioctl(sockfd6, SIOCADDRT, &route6) < 0)
+        throw SysError("setting tap0 as default ipv6 route");
+
+    sendFD(send_fd_socket, tapfd);
+}
+
+
+struct ChrootBuildSpawnContext : CloneSpawnContext {
+    bool ipv6Enabled = false;
+};
+
+static void setupTapAction(SpawnContext & sctx)
+{
+    ChrootBuildSpawnContext & ctx = (ChrootBuildSpawnContext &) sctx;
+    setupTap(ctx.setupFD, ctx.ipv6Enabled);
+}
+
+
+static void waitForSlirpReadyAction(SpawnContext & sctx)
+{
+    CloneSpawnContext & ctx = (CloneSpawnContext &) sctx;
+    /* Wait for the parent process to get slirp4netns running */
+    waitForMessage(ctx.setupFD, "1");
+}
+
+
+static void enableRouteLocalnetAction(SpawnContext & sctx)
+{
+    /* Don't treat as invalid packets received with loopback source addresses.
+       This allows for packets to be received from the host loopback using its
+       real address, so for example proxy settings referencing 127.0.0.1 will
+       work both for builtin and regular fixed-output derivations. */
+
+    /* Note: this file is treated relative to the network namespace of the
+       process that opens it.  We aren't modifying any host settings here,
+       provided we are in a new network namespace. */
+    Path route_localnet4 = "/proc/sys/net/ipv4/conf/all/route_localnet";
+    /* XXX: no such toggle exists for ipv6 */
+    if(pathExists(route_localnet4))
+        writeFile(route_localnet4, "1");
+}
+
+
+static void prepareSlirpChrootAction(SpawnContext & sctx)
+{
+    CloneSpawnContext & ctx = (CloneSpawnContext &) sctx;
+    auto mounts = tokenizeString<Strings>(readFile("/proc/self/mountinfo", true), "\n");
+    set<string> seen;
+    for(auto & i : mounts) {
+        auto fields = tokenizeString<vector<string> >(i, " ");
+        auto fs = decodeOctalEscaped(fields.at(4));
+        if(seen.find(fs) == seen.end()) {
+            /* slirp4netns only does a single umount of the old root ("/old")
+               after pivot_root.  Because of this, if there are multiple
+               mounts stacked on top of each other, only the topmost one (the
+               read-only bind mount) will be unmounted, leaving the real root
+               in place and causing the subsequent rmdir to fail.  The best we
+               can do is to make everything immediately underneath "/" be
+               read-only, which we do after mounting every non-/ filesystem
+               read-only. */
+            if(fs == "/") continue;
+            /* Don't mount /etc or any of its subdirectories, we're only interested
+               in mounting network stuff from it */
+            if(fs.compare(0, 4, "/etc") == 0) continue;
+            /* We want /run to be empty */
+            if(fs.compare(0, 4, "/run") == 0) continue;
+            /* Don't mount anything from under our chroot directory */
+            if(fs.compare(0, ctx.chrootRootDir.length(), ctx.chrootRootDir) == 0) continue;
+            struct stat st;
+            if(stat(fs.c_str(), &st) != 0) {
+                if(errno == EACCES) continue; /* Not accessible anyway */
+                else throw SysError(format("stat of `%1%'") % fs);
+            }
+
+            ctx.readOnlyFilesInChroot.insert(fs);
+            ctx.filesInChroot[fs] = fs;
+            seen.insert(fs);
+        }
+    }
+
+    /* Limit /etc to containing just /etc/resolv.conf and /etc/hosts, and
+       read-only at that */
+    Strings etcFiles = { "/etc/resolv.conf", "/etc/hosts" };
+    for(auto & i : etcFiles) {
+        if(pathExists(i)) {
+            ctx.filesInChroot[i] = i;
+            ctx.readOnlyFilesInChroot.insert(i);
+        }
+    }
+
+    /* Make everything immediately under "/" read-only, since we can't make /
+       itself read-only. */
+    DirEntries dirs = readDirectory("/");
+    for (auto & i : dirs) {
+        string fs = "/" + i.name;
+        if(fs == "/etc") continue;
+        if(fs == "/run") continue;
+        ctx.filesInChroot[fs] = fs;
+        ctx.readOnlyFilesInChroot.insert(fs);
+    }
+
+    if(mkdir((ctx.chrootRootDir + "/run").c_str(), 0700) == -1)
+        throw SysError("mkdir /run in chroot");
+}
+
+
+static void remapIdsTo0Action(SpawnContext & sctx)
+{
+    CloneSpawnContext & ctx = (CloneSpawnContext &) sctx;
+    string uid = std::to_string(ctx.setuid ? ctx.user : getuid());
+    string gid = std::to_string(ctx.setgid ? ctx.group : getgid());
+
+    /* If uid != getuid(), then the process that writes to uid_map needs
+     * capabilities in the parent user namespace.  Fork a child to stay in
+     * the parent namespace and do the write for us. */
+    unshareAndInitUserns(CLONE_NEWUSER,
+                         "0 " + uid + " 1",
+                         "0 " + gid + " 1",
+                         ctx.lockMountsAllowSetgroups);
+
+    ctx.user = 0;
+    ctx.group = 0;
+}
+
+
+static std::vector<struct sock_filter> slirpSeccompFilter()
+{
+    std::vector<struct sock_filter> out;
+    struct sock_filter allow = BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+    struct sock_filter deny = BPF_STMT(BPF_RET | BPF_K,
+                                       /* Could also use
+                                        * SECCOMP_RET_KILL_THREAD, but this
+                                        * gives nicer error messages. */
+                                       SECCOMP_RET_ERRNO | ENOSYS);
+    struct sock_filter silentDeny = BPF_STMT(BPF_RET | BPF_K,
+                                             SECCOMP_RET_ERRNO | 0);
+
+    /* instructions to check for AF_INET or AF_INET6 in the first argument */
+    std::vector<struct sock_filter> allowInet;
+    seccompMatchu64(allowInet,
+                    AF_INET,
+                    {allow},
+                    offsetof(struct seccomp_data, args[0]));
+    seccompMatchu64(allowInet,
+                    AF_INET6,
+                    {allow},
+                    offsetof(struct seccomp_data, args[0]));
+    /* ... and deny otherwise */
+    std::vector<struct sock_filter> denyNonInet;
+    denyNonInet.insert(denyNonInet.begin(), allowInet.begin(), allowInet.end());
+    denyNonInet.push_back(deny);
+
+    /* ... and silent variant. */
+    std::vector<struct sock_filter> silentDenyNonInet;
+
+    silentDenyNonInet.insert(silentDenyNonInet.begin(), allowInet.begin(), allowInet.end());
+    silentDenyNonInet.push_back(silentDeny);
+
+    /* accumulator <-- data.arch */
+    out.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, arch))));
+    /* Deny if non-native arch.  This simplifies checks as we can now just use
+     * the __NR_* syscall numbers. */
+    out.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                           AUDIT_ARCH_NATIVE,
+                           1,
+                           0));
+    out.push_back(deny);
+
+    std::vector<Uint32RangeAction> specialCaseActions;
+
+#ifdef __NR_socket
+    Uint32RangeAction socketAction;
+    socketAction.low = __NR_socket;
+    socketAction.high = __NR_socket;
+    socketAction.instructions = denyNonInet;
+    specialCaseActions.push_back(socketAction);
+#endif
+
+#ifdef __NR_socketpair
+    /* socketpair can be used to create unix sockets.  Presumably they can't
+     * be re-bound or reconnected to use the abstract unix socket namespace,
+     * since they're already connected, but let's not risk it - slirp4netns
+     * shouldn't have a reason to use any IPC anyway. */
+    Uint32RangeAction socketpairAction;
+    socketpairAction.low = __NR_socketpair;
+    socketpairAction.high = __NR_socketpair;
+    /* The silent variant is necessary for socketpair because slirp4netns
+       unconditionally creates a unix socket using socketpair for using setns
+       to exfiltrate a tapfd, despite not actually needing to do that at all
+       since we pass it the tapfd directly.  It will refuse to start if
+       socketpair returns anything but 0, so we have no choice but to do that.
+       The would-be-returned socket fds are never used. */
+    socketpairAction.instructions = silentDenyNonInet;
+    specialCaseActions.push_back(socketpairAction);
+#endif
+
+#ifdef __NR_socketcall
+    /* Some architectures include a system call "socketcall" for multiplexing
+     * all the socket-related calls.  This system call only accepts two
+     * arguments: a number to indicate which socket-related system call to
+     * invoke, and a pointer to an array holding the arguments for it.
+     * Seccomp can't inspect the contents of memory, only the raw bits passed
+     * to the kernel, so there's no way to only disallow certain invocations
+     * of a socket-related system call.  In the past decade, most linux
+     * architectures which relied on "socketcall" have since added dedicated
+     * system calls (socket, socketpair, connect, etc) that can be used
+     * instead of socketcall, and it was mostly uncommon architectures that
+     * relied on it in the first place, so we should be fine to just block it
+     * outright. */
+    Uint32RangeAction socketcallAction;
+    socketcallAction.low = __NR_socketcall;
+    socketcallAction.high = __NR_socketcall;
+    socketcallAction.instructions = {deny};
+    specialCaseActions.push_back(socketcallAction);
+#endif
+
+    /* Kernels before 4.8 allow a process to bypass seccomp restrictions by
+     * spawning another process to ptrace it and modify a system call after
+     * the seccomp check. */
+    Uint32RangeAction ptraceAction;
+    ptraceAction.low = __NR_ptrace;
+    ptraceAction.high = __NR_ptrace;
+    ptraceAction.instructions = { deny };
+    specialCaseActions.push_back(ptraceAction);
+
+    std::vector<struct sock_filter> specialCases =
+        rangeActionsToFilter(specialCaseActions);
+
+    /* accumulator <-- data.nr */
+    out.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, nr))));
+
+    out.insert(out.end(), specialCases.begin(), specialCases.end());
+
+    /* accumulator <-- data.nr again */
+    out.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, nr))));
+
+    std::vector<Uint32RangeAction> pinnedSyscallRanges = NATIVE_SYSCALL_RANGES;
+    if(pinnedSyscallRanges.size() != 0) {
+        for(auto & i : pinnedSyscallRanges) {
+            i.instructions.push_back(allow);
+        }
+        std::vector<struct sock_filter> pinnedWhitelist = rangeActionsToFilter(pinnedSyscallRanges);
+        out.insert(out.end(), pinnedWhitelist.begin(), pinnedWhitelist.end());
+        out.push_back(deny);
+    }
+    else {
+        /* Couldn't determine pinned system calls, resort to allowing by
+         * default. */
+        out.push_back(allow);
+    }
+    return out;
+}
+
+
+#if DEBUG_SECCOMP_FILTER
+
+/* Note: limited to only the subset we actually use, makes various
+ * assumptions, not general-purpose. */
+static void writeSeccompFilterDot(std::vector<struct sock_filter> filter, FILE *f)
+{
+    fprintf(f, "digraph filter { \n");
+    for(size_t j = 0; j < filter.size(); j++) {
+        switch(BPF_CLASS(filter[j].code)) {
+        case BPF_LD:
+            fprintf(f, "\"%zu\" [label=\"load into accumulator from offset %u\"];\n",
+                    j, filter[j].k);
+            fprintf(f, "\"%zu\" -> \"%zu\";\n", j, j + 1);
+            break;
+        case BPF_JMP:
+            switch(BPF_OP(filter[j].code)) {
+            case BPF_JA:
+                fprintf(f, "\"%zu\" [label=\"unconditional jump\"];\n", j);
+                fprintf(f, "\"%zu\" -> \"%zu\";\n", j, j + filter[j].k + 1);
+                break;
+            case BPF_JEQ:
+                fprintf(f, "\"%zu\" [label=\"jump if accumulator = %u\"];\n", j,
+                        filter[j].k);
+                fprintf(f, "\"%zu\" -> \"%zu\" [label=\"true\"];\n", j,
+                        j + filter[j].jt + 1);
+                fprintf(f, "\"%zu\" -> \"%zu\" [label=\"false\"];\n", j,
+                        j + filter[j].jf + 1);
+                break;
+            case BPF_JGT:
+                fprintf(f, "\"%zu\" [label=\"jump if accumulator > %u\"];\n", j,
+                        filter[j].k);
+                fprintf(f, "\"%zu\" -> \"%zu\" [label=\"true\"];\n", j,
+                        j + filter[j].jt + 1);
+                fprintf(f, "\"%zu\" -> \"%zu\" [label=\"false\"];\n", j,
+                        j + filter[j].jf + 1);
+                break;
+            case BPF_JGE:
+                fprintf(f, "\"%zu\" [label=\"jump if accumulator >= %u\"];\n", j,
+                        filter[j].k);
+                fprintf(f, "\"%zu\" -> \"%zu\" [label=\"true\"];\n", j,
+                        j + filter[j].jt + 1);
+                fprintf(f, "\"%zu\" -> \"%zu\" [label=\"false\"];\n", j,
+                        j + filter[j].jf + 1);
+                break;
+            default:
+                fprintf(stderr, "unrecognized jump operation at %zu: %d\n", j, BPF_OP(filter[j].code));
+            }
+            break;
+        case BPF_RET:
+            switch(filter[j].k & SECCOMP_RET_ACTION_FULL) {
+            case SECCOMP_RET_KILL_PROCESS:
+                fprintf(f, "\"%zu\" [label=\"kill the process\"];\n", j);
+                break;
+            case SECCOMP_RET_KILL_THREAD:
+                fprintf(f, "\"%zu\" [label=\"kill the thread\"];\n", j);
+                break;
+            case SECCOMP_RET_ERRNO:
+                fprintf(f, "\"%zu\" [label=\"return errno for \\\"%s\\\"\"];\n",
+                        j, strerror(filter[j].k & SECCOMP_RET_DATA));
+                break;
+            case SECCOMP_RET_ALLOW:
+                fprintf(f, "\"%zu\" [label=\"allow system call\"];\n", j);
+                break;
+            default:
+                fprintf(stderr, "unrecognized return operation at %zu: %d\n", j, filter[j].k);
+                break;
+            }
+            break;
+        default:
+            fprintf(stderr, "unrecognized bpf class at %zu: %d\n", j, BPF_CLASS(filter[j].code));
+        }
+    }
+    fprintf(f, "}\n");
+}
+
+#endif
+
+/* Spawn 'slirp4netns' in separate namespaces as the given user and group;
+   'tapfd' must correspond to a /dev/net/tun connection.  Configure it to
+   write to 'notifyReadyFD' once it's up and running.  */
+static pid_t spawnSlirp4netns(int tapfd, int notifyReadyFD,
+			      uid_t slirpUser, gid_t slirpGroup)
+{
+    Pipe slirpSetupPipe;
+    CloneSpawnContext slirpCtx;
+    AutoCloseFD devNullFd;
+    bool amRoot = geteuid() == 0;
+    bool newUserNS = !amRoot;
+    slirpCtx.phases = getCloneSpawnPhases();
+    slirpCtx.cloneFlags =
+        /* slirp4netns will handle the chroot and pivot_root on its own, but
+           we should ensure that whatever filesystem holds the slirp4netns
+           executable is read-only, since otherwise it might be possible for a
+           compromised slirp4netns to overwrite itself using /proc/self/exe,
+           depending on who owns what. */
+        CLONE_NEWNS |
+        /* ptrace disregards user namespaces when the would-be tracing process
+           and the would-be traced process have the same real, effective, and
+           saved user ids.  The only way to protect them is to make it
+           impossible to reference them. */
+        CLONE_NEWPID |
+        /* need this when we're not running as root so that we have the
+         * capabilities to create the other namespaces. */
+        (newUserNS ? CLONE_NEWUSER : 0) |
+        /* For good measure */
+        CLONE_NEWIPC |
+        CLONE_NEWUTS |
+        /* Of course, a new network namespace would defeat the
+           purpose. */
+        SIGCHLD;
+    slirpCtx.program = settings.slirp4netns;
+    slirpCtx.args =
+        { "slirp4netns", "--netns-type=tapfd",
+          "--enable-sandbox",
+          "--enable-ipv6",
+          "--ready-fd=" + std::to_string(notifyReadyFD) };
+    if(!settings.useHostLoopback)
+        slirpCtx.args.push_back("--disable-host-loopback");
+    slirpCtx.args.push_back(std::to_string(tapfd));
+    slirpCtx.inheritEnv = true;
+    if(newUserNS) {
+        slirpSetupPipe.create();
+        slirpCtx.setupFD = slirpSetupPipe.readSide;
+        slirpCtx.earlyCloseFDs.insert(slirpSetupPipe.writeSide);
+    }
+    slirpCtx.closeMostFDs = true;
+    slirpCtx.preserveFDs.insert(notifyReadyFD);
+    slirpCtx.preserveFDs.insert(tapfd);
+    slirpCtx.setStdin = true;
+    slirpCtx.stdinFile = "/dev/null";
+    slirpCtx.setsid = true;
+    slirpCtx.dropAmbientCapabilities = true;
+    slirpCtx.doChroot = true;
+    slirpCtx.mountTmpfsOnChroot = true;
+    slirpCtx.chrootRootDir = getEnv("TMPDIR", "/tmp");
+    slirpCtx.lockMounts = true;
+    slirpCtx.lockMountsMapAll = true; /* So that later setuid will work */
+    slirpCtx.lockMountsAllowSetgroups = amRoot;
+    slirpCtx.mountProc = true;
+    slirpCtx.setuid = true;
+    slirpCtx.user = slirpUser;
+    slirpCtx.setgid = true;
+    slirpCtx.group = slirpGroup;
+    /* Dropping supplementary groups requires capabilities in current user
+     * namespace */
+    if(amRoot) {
+        slirpCtx.supplementaryGroups = {};
+        slirpCtx.setSupplementaryGroups = true;
+    }
+    /* Unless built with '--enable-kernel=4.3.0' or similar, glibc on i686
+       uses 'socketcall' instead of dedicated system calls like 'socket' and
+       'bind'.  Since the seccomp filter cannot inspect 'socketcall' arguments
+       in a meaningful way, it can only prohibit all 'socketcall' calls; the
+       other option is to disable the seccomp filter entirely, meaning that
+       slirp4netns would have access to abstract unix sockets in the root
+       network namespace.  */
+#ifdef __NR_socketcall
+#ifndef NO_SOCKETCALL_LIBC
+    if(getenv("GUIX_FORCE_SECCOMP") == NULL)
+        printMsg(lvlInfo, "warning: seccomp filter for slirp4netns presumed unusable with this libc, disabling it");
+    else
+#endif
+#endif
+    {
+        slirpCtx.seccompFilter = slirpSeccompFilter();
+        slirpCtx.addSeccompFilter = true;
+    }
+
+    /* Silence slirp4netns output unless requested */
+    if(verbosity <= lvlInfo) {
+        devNullFd = open("/dev/null", O_WRONLY);
+        if(devNullFd == -1)
+            throw SysError("cannot open `/dev/null'");
+        slirpCtx.logFD = devNullFd;
+    }
+
+#if DEBUG_SECCOMP_FILTER
+    writeSeccompFilterDot(slirpCtx.seccompFilter, stderr);
+    fflush(stderr);
+#endif
+
+    addPhaseAfter(slirpCtx.phases,
+                  "makeChrootSeparateFilesystem",
+                  "prepareSlirpChroot",
+                  prepareSlirpChrootAction);
+
+    /* slirp behaves differently when uid != 0 */
+    addPhaseAfter(slirpCtx.phases,
+                  "lockMounts",
+                  "remapIdsTo0",
+                  remapIdsTo0Action);
+
+#if 0 /* For debugging networking issues */
+    slirpCtx.env["SLIRP_DEBUG"] = "call,misc,error,tftp,verbose_call";
+    slirpCtx.env["G_MESSAGES_DEBUG"] = "all";
+#endif
+
+    pid_t slirpPid = cloneChild(slirpCtx);
+
+    if(newUserNS) {
+        slirpSetupPipe.readSide.close();
+        initializeUserNamespace(slirpPid, getuid(), getgid(), getuid(), getgid());
+        writeFull(slirpSetupPipe.writeSide, (unsigned char*)"go\n", 3);
+    }
+    return slirpPid;
+}
+
+static void clearRootWritePermsAction(SpawnContext & sctx)
+{
+    if(chmod("/", 0555) == -1)
+        throw SysError("changing mode of chroot root directory");
+}
+
+
+/* Note: linux-only */
+bool haveGlobalIPv6Address()
+{
+    if(!pathExists("/proc/net/if_inet6")) return false;
+
+    auto addresses = tokenizeString<Strings>(readFile("/proc/net/if_inet6", true), "\n");
+    for(auto & i : addresses) {
+        auto fields = tokenizeString<vector<string> >(i, " ");
+        auto scopeHex = fields.at(3);
+        /* 0x0 means "Global scope" */
+        if(scopeHex == "00" || scopeHex == "40") return true;
+    }
+    return false;
+}
+
+#endif /* CHROOT_ENABLED */
+
+/* Return true if the operating system kernel part of SYSTEM1 and SYSTEM2 (the
+   bit that comes after the hyphen in system types such as "i686-linux") is
+   the same.  */
+static bool sameOperatingSystemKernel(const std::string& system1, const std::string& system2)
+{
+    auto os1 = system1.substr(system1.find("-"));
+    auto os2 = system2.substr(system2.find("-"));
+    return os1 == os2;
+}
+
+
+void DerivationGoal::execBuilderOrBuiltin(SpawnContext & ctx)
+{
+    if(isBuiltin(drv)) {
+        /* Note: must not return from this block */
+        try {
+            logType = ltFlat;
+
+            auto buildDrv = lookupBuiltinBuilder(drv.builder);
+            if (buildDrv != NULL) {
+                /* Check what the output file name is.  When doing a 'bmCheck'
+                   build, the output file name is different from that
+                   specified in DRV due to hash rewriting.  */
+                Path output = drv.outputs["out"].path;
+                auto redirected = redirectedOutputs.find(output);
+                if (redirected != redirectedOutputs.end())
+                    output = redirected->second;
+
+                buildDrv(drv, drvPath, output);
+            }
+            else
+                throw Error(format("unsupported builtin function '%1%'") % string(drv.builder, 8));
+            _exit(0);
+        } catch (std::exception & e) {
+            writeFull(STDERR_FILENO, "error: " + string(e.what()) + "\n");
+            _exit(1);
+        }
+    }
+    /* Ensure that the builder is within the store.  This prevents users from
+       using /proc/self/exe (or a symlink to it) as their builder, which could
+       allow them to overwrite the guix-daemon binary (CVE-2019-5736).
+
+       This attack is possible even if the target of /proc/self/exe is outside
+       the chroot (it's as if it were a hard link), though it requires that
+       its ELF interpreter and dependencies be in the chroot.
+
+       Note: 'canonPath' throws if 'ctx.program' cannot be resolved within the
+       chroot.  */
+    ctx.program = canonPath(ctx.program, true);
+    if(!isInStore(ctx.program))
+        throw Error(format("derivation builder `%1' is outside the store") % ctx.program);
+    /* If DRV targets the same operating system kernel, try to execute it:
+       there might be binfmt_misc set up for user-land emulation of other
+       architectures.  However, if it targets a different operating
+       system--e.g., "i586-gnu" vs. "x86_64-linux"--do not try executing it:
+       the ELF file for that OS is likely indistinguishable from a native ELF
+       binary and it would just crash at run time.  */
+    int error;
+    if (sameOperatingSystemKernel(drv.platform, settings.thisSystem)) {
+        try {
+            execAction(ctx);
+            error = errno;
+        } catch(SysError & e) {
+            error = e.errNo;
+        }
+    } else {
+        error = ENOEXEC;
+    }
+    /* Right platform?  Check this after we've tried 'execve' to allow for
+       transparent emulation of different platforms with binfmt_misc handlers
+       that invoke QEMU.  */
+    if (error == ENOEXEC && !canBuildLocally(drv.platform)) {
+        if (settings.printBuildTrace)
+            printMsg(lvlError, format("@ unsupported-platform %1% %2%") % drvPath % drv.platform);
+        throw Error(format("a `%1%' is required to build `%3%', but I am a `%2%'")
+                    % drv.platform % settings.thisSystem % drvPath);
+    }
+
+    errno = error;
+    throw SysError(format("executing `%1%'") % drv.builder);
+}
+
+
+void execBuilderOrBuiltinAction(SpawnContext & ctx)
+{
+    ((DerivationGoal *)ctx.extraData)->execBuilderOrBuiltin(ctx);
+}
+
 
 void DerivationGoal::startBuilder()
 {
@@ -1665,6 +2400,57 @@ void DerivationGoal::startBuilder()
     f.exceptions(boost::io::all_error_bits ^ boost::io::too_many_args_bit);
     startNest(nest, lvlInfo, f % showPaths(missingPaths) % curRound % nrRounds);
 
+    /* A ChrootBuildSpawnContext reference can be passed to procedures
+       expecting a SpawnContext reference */
+#if CHROOT_ENABLED
+    ChrootBuildSpawnContext ctx;
+#else
+    SpawnContext ctx;
+#endif
+
+    ctx.extraData = (void *) this;
+    ctx.setsid = true;
+    ctx.oomSacrifice = true;
+    ctx.signalSetupSuccess = true;
+    ctx.setStdin = true;
+    ctx.stdinFile = "/dev/null";
+    ctx.closeMostFDs = true;
+    ctx.program = drv.builder;
+    ctx.args = drv.args;
+    if(!isBuiltin(drv))
+        ctx.args.insert(ctx.args.begin(), baseNameOf(drv.builder));
+
+#if __linux__
+    ctx.dropAmbientCapabilities = true;
+    ctx.persona = PER_LINUX; /* default */
+    ctx.setPersona = true;
+    /* Change the personality to 32-bit if we're doing an
+       i686-linux build on an x86_64-linux machine. */
+    struct utsname utsbuf;
+    uname(&utsbuf);
+    if (drv.platform == "i686-linux" &&
+        (settings.thisSystem == "x86_64-linux" ||
+         (!strcmp(utsbuf.sysname, "Linux") && !strcmp(utsbuf.machine, "x86_64")))) {
+        ctx.persona = PER_LINUX32;
+    }
+
+    if (drv.platform == "armhf-linux" &&
+        (settings.thisSystem == "aarch64-linux" ||
+         (!strcmp(utsbuf.sysname, "Linux") && !strcmp(utsbuf.machine, "aarch64")))) {
+        ctx.persona = PER_LINUX32;
+    }
+
+    /* Impersonate a Linux 2.6 machine to get some determinism in
+       builds that depend on the kernel version. */
+    if ((drv.platform == "i686-linux" || drv.platform == "x86_64-linux") && settings.impersonateLinux26) {
+        ctx.persona |= 0x0020000; /* == UNAME26 */
+    }
+
+    /* Disable address space randomization for improved determinism. */
+    ctx.persona |= ADDR_NO_RANDOMIZE;
+
+#endif
+
     /* Note: built-in builders are *not* running in a chroot environment so
        that we can easily implement them in Guile without having it as a
        derivation input (they are running under a separate build user,
@@ -1672,12 +2458,13 @@ void DerivationGoal::startBuilder()
     useChroot = settings.useChroot && !isBuiltin(drv);
 
     /* Construct the environment passed to the builder. */
-    env.clear();
+    ctx.env.clear();
+    ctx.inheritEnv = false;
 
     /* Most shells initialise PATH to some default (/bin:/usr/bin:...) when
        PATH is not set.  We don't want this, so we fill it in with some dummy
        value. */
-    env["PATH"] = "/path-not-set";
+    ctx.env["PATH"] = "/path-not-set";
 
     /* Set HOME to a non-existing path to prevent certain programs from using
        /etc/passwd (or NIS, or whatever) to locate the home directory (for
@@ -1686,20 +2473,20 @@ void DerivationGoal::startBuilder()
        they are looking for does not exist if HOME is set but points to some
        non-existing path. */
     Path homeDir = "/homeless-shelter";
-    env["HOME"] = homeDir;
+    ctx.env["HOME"] = homeDir;
 
     /* Tell the builder where the store is.  Usually they
        shouldn't care, but this is useful for purity checking (e.g.,
        the compiler or linker might only want to accept paths to files
        in the store or in the build directory). */
-    env["NIX_STORE"] = settings.nixStore;
+    ctx.env["NIX_STORE"] = settings.nixStore;
 
     /* The maximum number of cores to utilize for parallel building. */
-    env["NIX_BUILD_CORES"] = (format("%d") % settings.buildCores).str();
+    ctx.env["NIX_BUILD_CORES"] = (format("%d") % settings.buildCores).str();
 
     /* Add all bindings specified in the derivation. */
-    foreach (StringPairs::iterator, i, drv.env)
-        env[i->first] = i->second;
+    for (auto& i : drv.env)
+        ctx.env[i.first] = i.second;
 
     /* Create a temporary directory where the build will take
        place. */
@@ -1728,18 +2515,20 @@ void DerivationGoal::startBuilder()
        directory. */
     tmpDirInSandbox = useChroot ? canonPath("/tmp", true) + "/guix-build-" + drvName + "-0" : tmpDir;
 
+    ctx.setcwd = true;
+    ctx.cwd = tmpDirInSandbox;
     /* For convenience, set an environment pointing to the top build
        directory. */
-    env["NIX_BUILD_TOP"] = tmpDirInSandbox;
+    ctx.env["NIX_BUILD_TOP"] = tmpDirInSandbox;
 
     /* Also set TMPDIR and variants to point to this directory. */
-    env["TMPDIR"] = env["TEMPDIR"] = env["TMP"] = env["TEMP"] = tmpDirInSandbox;
+    ctx.env["TMPDIR"] = ctx.env["TEMPDIR"] = ctx.env["TMP"] = ctx.env["TEMP"] = tmpDirInSandbox;
 
     /* Explicitly set PWD to prevent problems with chroot builds.  In
        particular, dietlibc cannot figure out the cwd because the
        inode of the current directory doesn't appear in .. (because
        getdents returns the inode of the mount point). */
-    env["PWD"] = tmpDirInSandbox;
+    ctx.env["PWD"] = tmpDirInSandbox;
 
     /* *Only* if this is a fixed-output derivation, propagate the
        values of the environment variables specified in the
@@ -1752,7 +2541,7 @@ void DerivationGoal::startBuilder()
        already know the cryptographic hash of the output). */
     if (fixedOutput) {
         Strings varNames = tokenizeString<Strings>(get(drv.env, "impureEnvVars"));
-        foreach (Strings::iterator, i, varNames) env[*i] = getEnv(*i);
+        for (auto& i : varNames) ctx.env[i] = getEnv(i);
     }
 
     /* The `exportReferencesGraph' feature allows the references graph
@@ -1788,11 +2577,11 @@ void DerivationGoal::startBuilder()
         computeFSClosure(worker.store, storePath, paths);
         paths2 = paths;
 
-        foreach (PathSet::iterator, j, paths2) {
-            if (isDerivation(*j)) {
-                Derivation drv = derivationFromPath(worker.store, *j);
-                foreach (DerivationOutputs::iterator, k, drv.outputs)
-                    computeFSClosure(worker.store, k->second.path, paths);
+        for (auto& j : paths2) {
+            if (isDerivation(j)) {
+                Derivation drv = derivationFromPath(worker.store, j);
+                for (auto& k : drv.outputs)
+                    computeFSClosure(worker.store, k.second.path, paths);
             }
         }
 
@@ -1816,10 +2605,24 @@ void DerivationGoal::startBuilder()
         /* Change ownership of the temporary build directory. */
         if (chown(tmpDir.c_str(), buildUser.getUID(), buildUser.getGID()) == -1)
             throw SysError(format("cannot change ownership of '%1%'") % tmpDir);
+
+        ctx.setuid = true;
+        ctx.user = buildUser.getUID();
+        ctx.setgid = true;
+        ctx.group = buildUser.getGID();
+        ctx.setSupplementaryGroups = true;
+        ctx.supplementaryGroups = buildUser.getSupplementaryGIDs();
     }
+
+#if CHROOT_ENABLED
+    bool useSlirp4netns = false;
+#endif
 
     if (useChroot) {
 #if CHROOT_ENABLED
+        ctx.phases = getCloneSpawnPhases();
+        addPhaseAfter(ctx.phases, "chroot", "clearRootWritePerms",
+                      clearRootWritePermsAction);
         /* Create a temporary directory in which we set up the chroot
            environment using bind-mounts.  Put it in the store to ensure it
            can be atomically moved to the store.  */
@@ -1829,6 +2632,34 @@ void DerivationGoal::startBuilder()
 
         /* Clean up the chroot directory automatically. */
         autoDelChroot = std::shared_ptr<AutoDelete>(new AutoDelete(chrootRootTop));
+
+        if(fixedOutput) {
+            if(findProgram(settings.slirp4netns) == "")
+                printMsg(lvlError, format("`%1%' can't be found in PATH, network access disabled") % settings.slirp4netns);
+            else {
+                if(!pathExists("/dev/net/tun"))
+                    printMsg(lvlError, "`/dev/net/tun' is missing, network access disabled");
+                else {
+                    useSlirp4netns = true;
+                    ctx.ipv6Enabled = haveGlobalIPv6Address();
+                }
+            }
+        }
+
+        ctx.doChroot = true;
+        ctx.chrootRootDir = chrootRootDir;
+        ctx.cloneFlags = CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWPID | CLONE_NEWIPC | CLONE_NEWUTS | SIGCHLD;
+
+        if(!fixedOutput || /* redundant but shows the cases clearly */
+           (fixedOutput && !settings.useHostLoopback))
+            ctx.initLoopback = true;
+
+        if(!buildUser.enabled())
+            ctx.cloneFlags |= CLONE_NEWUSER;
+
+        /* Set the hostname etc. to fixed values. */
+        ctx.hostname = "localhost";
+        ctx.domainname = "(none)";  /* kernel default */
 
         printMsg(lvlChatty, format("setting up chroot environment in `%1%'") % chrootRootDir);
 
@@ -1865,9 +2696,45 @@ void DerivationGoal::startBuilder()
             (format("nixbld:!:%1%:\n")
                 % (buildUser.enabled() ? buildUser.getGID() : guestGID)).str());
 
-        /* Create /etc/hosts with localhost entry. */
-        if (!fixedOutput)
-            writeFile(chrootRootDir + "/etc/hosts", "127.0.0.1 localhost\n");
+        if (fixedOutput) {
+            /* Fixed-output derivations typically need to access the network,
+               so give them access to /etc/resolv.conf and so on. */
+            std::vector<Path> files = { "/etc/services", "/etc/nsswitch.conf" };
+            if (useSlirp4netns) {
+                if (settings.useHostLoopback) {
+                    string hosts;
+                    if(pathExists("/etc/hosts")) {
+                        hosts = readFile("/etc/hosts");
+                        hosts = std::regex_replace(hosts, std::regex("127\\.0\\.0\\.1"), "10.0.2.2");
+                        hosts = std::regex_replace(hosts, std::regex("::1"), "fd00::2");
+                    } else {
+                        hosts =
+                            "10.0.2.2 localhost\n"
+                            "fd00::2 localhost\n";
+                    }
+                    writeFile(chrootRootDir + "/etc/hosts", hosts);
+                }
+                else {
+                    files.push_back("/etc/hosts");
+                }
+                writeFile(chrootRootDir + "/etc/resolv.conf", "nameserver 10.0.2.3");
+            }
+            else {
+                files.push_back("/etc/hosts");
+                files.push_back("/etc/resolv.conf");
+            }
+            for (auto & file : files) {
+                if (pathExists(file)) {
+                    ctx.filesInChroot[file] = file;
+                    ctx.readOnlyFilesInChroot.insert(file);
+                }
+            }
+        }
+        else
+            /* Create /etc/hosts with localhost entry. */
+            writeFile(chrootRootDir + "/etc/hosts",
+                      "127.0.0.1 localhost\n"
+                      "::1 localhost\n");
 
         /* Bind-mount a user-configurable set of directories from the
            host file system. */
@@ -1877,11 +2744,11 @@ void DerivationGoal::startBuilder()
         for (auto & i : dirs) {
             size_t p = i.find('=');
             if (p == string::npos)
-                dirsInChroot[i] = i;
+                ctx.filesInChroot[i] = i;
             else
-                dirsInChroot[string(i, 0, p)] = string(i, p + 1);
+                ctx.filesInChroot[string(i, 0, p)] = string(i, p + 1);
         }
-        dirsInChroot[tmpDirInSandbox] = tmpDir;
+        ctx.filesInChroot[tmpDirInSandbox] = tmpDir;
 
 	/* Create the fake store.  */
         Path chrootStoreDir = chrootRootDir + settings.nixStore;
@@ -1896,23 +2763,9 @@ void DerivationGoal::startBuilder()
         /* Make the closure of the inputs available in the chroot, rather than
            the whole store.  This prevents any access to undeclared
            dependencies. */
-        foreach (PathSet::iterator, i, inputPaths) {
-	    struct stat st;
-            if (lstat(i->c_str(), &st))
-                throw SysError(format("getting attributes of path `%1%'") % *i);
-
-	    if (S_ISLNK(st.st_mode)) {
-		/* Since bind-mounts follow symlinks, thus representing their
-		   target and not the symlink itself, special-case
-		   symlinks. XXX: When running unprivileged, TARGET can be
-		   deleted by the build process.  Use 'open_tree' & co. when
-		   it's more widely available.  */
-                Path target = chrootRootDir + *i;
-		if (symlink(readLink(*i).c_str(), target.c_str()) == -1)
-		    throw SysError(format("failed to create symlink '%1%' to '%2%'") % target % readLink(*i));
-	    }
-	    else
-		dirsInChroot[*i] = *i;
+        for (auto& i : inputPaths) {
+            ctx.filesInChroot[i] = i;
+            ctx.readOnlyFilesInChroot.insert(i);
         }
 
         /* If we're repairing, checking or rebuilding part of a
@@ -1921,14 +2774,56 @@ void DerivationGoal::startBuilder()
            (typically the dependencies of /bin/sh).  Throw them
            out. */
         for (auto & i : drv.outputs)
-            dirsInChroot.erase(i.second.path);
+            ctx.filesInChroot.erase(i.second.path);
 
+        /* Set up a nearly empty /dev, unless the user asked to bind-mount the
+           host /dev. */
+        Strings ss;
+        if(ctx.filesInChroot.find("/dev") == ctx.filesInChroot.end()) {
+            createDirs(chrootRootDir + "/dev/shm");
+            createDirs(chrootRootDir + "/dev/pts");
+            ss.push_back("/dev/full");
+#ifdef __linux__
+            if (pathExists("/dev/kvm"))
+                ss.push_back("/dev/kvm");
+#endif
+            ss.push_back("/dev/null");
+            ss.push_back("/dev/random");
+            ss.push_back("/dev/tty");
+            ss.push_back("/dev/urandom");
+            ss.push_back("/dev/zero");
+            createSymlink("/proc/self/fd", chrootRootDir + "/dev/fd");
+            createSymlink("/proc/self/fd/0", chrootRootDir + "/dev/stdin");
+            createSymlink("/proc/self/fd/1", chrootRootDir + "/dev/stdout");
+            createSymlink("/proc/self/fd/2", chrootRootDir + "/dev/stderr");
+        }
+
+        for (auto & i : ss) ctx.filesInChroot[i] = i;
+
+        ctx.mountProc = true;
+        ctx.mountDevshm = true;
+        /* Mount a new devpts on /dev/pts.  Note that this requires the kernel
+           to be compiled with CONFIG_DEVPTS_MULTIPLE_INSTANCES=y (which is
+           the case if /dev/ptx/ptmx exists). */
+        ctx.maybeMountDevpts =
+            pathExists("/dev/pts/ptmx") &&
+            ctx.filesInChroot.find("/dev/pts") == ctx.filesInChroot.end();
+        ctx.lockMounts = !buildUser.enabled();
+
+        for (auto & i : ctx.filesInChroot) {
+            /* Failsafe: If the source is in the store, it should be
+               read-only */
+            if(i.second.compare(0, settings.nixStore.length(), settings.nixStore) == 0) {
+                ctx.readOnlyFilesInChroot.insert(i.first);
+            }
+        }
 #else
         throw Error("chroot builds are not supported on this platform");
 #endif
     }
 
     else {
+        ctx.phases = getBasicSpawnPhases();
 
         if (pathExists(homeDir))
             throw Error(format("directory `%1%' exists; please remove it") % homeDir);
@@ -1943,19 +2838,20 @@ void DerivationGoal::startBuilder()
            contents of the new outputs to replace the dummy strings
            with the actual hashes. */
         if (validPaths.size() > 0)
-            foreach (PathSet::iterator, i, validPaths)
-                addHashRewrite(*i);
+            for (auto i : validPaths)
+                addHashRewrite(i);
 
         /* If we're repairing, then we don't want to delete the
            corrupt outputs in advance.  So rewrite them as well. */
         if (buildMode == bmRepair)
-            foreach (PathSet::iterator, i, missingPaths)
-                if (worker.store.isValidPath(*i) && pathExists(*i)) {
-                    addHashRewrite(*i);
-                    redirectedBadOutputs.insert(*i);
+            for (auto& i : missingPaths)
+                if (worker.store.isValidPath(i) && pathExists(i)) {
+                    addHashRewrite(i);
+                    redirectedBadOutputs.insert(i);
                 }
     }
 
+    replacePhase(ctx.phases, "exec", execBuilderOrBuiltinAction);
 
     /* Run the builder. */
     printMsg(lvlChatty, format("executing builder `%1%'") % drv.builder);
@@ -1965,6 +2861,9 @@ void DerivationGoal::startBuilder()
 
     /* Create a pipe to get the output of the builder. */
     builderOut.create();
+
+    ctx.logFD = builderOut.writeSide;
+    ctx.earlyCloseFDs.insert(builderOut.readSide);
 
     /* Fork a child to build the package.  Note that while we
        currently use forks to run and wait for the children, it
@@ -1985,7 +2884,9 @@ void DerivationGoal::startBuilder()
 
        - The private network namespace ensures that the builder cannot
          talk to the outside world (or vice versa).  It only has a
-         private loopback interface.
+         private loopback interface.  As an exception, fixed-output
+         derivations may talk to the outside world through slirp4netns, but
+         still in a separate network namespace.
 
        - The IPC namespace prevents the builder from communicating
          with outside processes using SysV IPC mechanisms (shared
@@ -1997,43 +2898,72 @@ void DerivationGoal::startBuilder()
     */
 #if __linux__
     if (useChroot) {
-	char stack[32 * 1024];
-	int flags = CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWUTS | SIGCHLD;
-	if (!fixedOutput) {
-	    flags |= CLONE_NEWNET;
-	}
-	if (!buildUser.enabled() || getuid() != 0) {
-	    flags |= CLONE_NEWUSER;
-	    readiness.create();
-	}
+        int fds[2];
+        AutoCloseFD parentSetupSocket;
+        AutoCloseFD childSetupSocket;
 
-	/* Ensure proper alignment on the stack.  On aarch64, it has to be 16
-	   bytes.  */
- 	pid = clone(childEntry,
-		    (char *)(((uintptr_t)stack + sizeof(stack) - 8) & ~(uintptr_t)0xf),
-		    flags, this);
-	if (pid == -1) {
-	    if ((flags & CLONE_NEWUSER) != 0 && getuid() != 0)
-		/* 'clone' fails with EPERM on distros where unprivileged user
-		   namespaces are disabled.  Error out instead of giving up on
-		   isolation.  */
-		throw SysError("cannot create process in unprivileged user namespace");
-	    else
-		throw SysError("cloning builder process");
-	}
+        if(((ctx.cloneFlags & CLONE_NEWUSER) != 0) || useSlirp4netns) {
+            if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds))
+                throw SysError("creating setup socket");
+            parentSetupSocket = fds[0];
+            closeOnExec(parentSetupSocket);
+            ctx.earlyCloseFDs.insert(parentSetupSocket);
+            childSetupSocket = fds[1];
+            closeOnExec(childSetupSocket);
+            ctx.setupFD = childSetupSocket;
+        }
 
-	readiness.readSide.close();
-	if ((flags & CLONE_NEWUSER) != 0) {
-	     /* Initialize the UID/GID mapping of the child process.  */
-	     initializeUserNamespace(pid);
-	     writeFull(readiness.writeSide, (unsigned char*)"go\n", 3);
-	}
-	readiness.writeSide.close();
+        if(useSlirp4netns) {
+            addPhaseAfter(ctx.phases, "initLoopback", "setupTap", setupTapAction);
+            addPhaseAfter(ctx.phases, "setupTap", "waitForSlirpReady",
+                          waitForSlirpReadyAction);
+            if(settings.useHostLoopback)
+                addPhaseAfter(ctx.phases, "waitForSlirpReady", "enableRouteLocalnet",
+                              enableRouteLocalnetAction);
+        }
+
+        pid = cloneChild(ctx);
+
+        if(childSetupSocket >= 0) childSetupSocket.close();
+
+        if ((ctx.cloneFlags & CLONE_NEWUSER) != 0) {
+            /* Initialize the UID/GID mapping of the builder.  */
+            initializeUserNamespace(pid);
+            writeFull(parentSetupSocket, (unsigned char*)"go\n", 3);
+        }
+
+        try {
+            if(useSlirp4netns) {
+                AutoCloseFD tapfd = receiveFD(parentSetupSocket);
+                /* Start 'slirp4netns' to provide networking in the child process;
+                   running the builder in the global network namespace would give
+                   it access to the global namespace of abstract sockets, which
+                   could be used to grant write access to the store to an external
+                   process. */
+                slirp = spawnSlirp4netns(
+                    tapfd,
+                    parentSetupSocket,
+                    /* Do whatever we can to run slirp4netns as some user
+                       other than root - run it as the build user if
+                       necessary */
+                    buildUser.enabled() ? buildUser.getUID() : getuid(),
+                    buildUser.enabled() ? buildUser.getGID() : getgid());
+            }
+        } catch(std::exception & e) {
+            if(slirp != -1) {
+                slirp.kill(true);
+            }
+            if(pid != -1) {
+                pid.kill(true);
+            }
+            throw e;
+        }
+
     } else
 #endif
     {
         pid = fork();
-        if (pid == 0) runChild();
+        if (pid == 0) runChildSetup(ctx);
     }
 
     if (pid == -1) throw SysError("unable to fork");
@@ -2041,8 +2971,7 @@ void DerivationGoal::startBuilder()
     /* parent */
     pid.setSeparatePG(true);
     builderOut.writeSide.close();
-    worker.childStarted(shared_from_this(), pid,
-        singleton<set<int> >(builderOut.readSide), true, true);
+    worker.childStarted(shared_from_this(), pid, std::set<int>{builderOut.readSide}, true, true);
 
     /* Check if setting up the build environment failed. */
     string msg = readLine(builderOut.readSide);
@@ -2050,415 +2979,9 @@ void DerivationGoal::startBuilder()
 
     if (settings.printBuildTrace) {
         printMsg(lvlError, format("@ build-started %1% - %2% %3% %4%")
-            % drvPath % drv.platform % logFile % pid);
+                 % drvPath % drv.platform % logFile % pid);
     }
 
-}
-
-/* Return true if the operating system kernel part of SYSTEM1 and SYSTEM2 (the
-   bit that comes after the hyphen in system types such as "i686-linux") is
-   the same.  */
-static bool sameOperatingSystemKernel(const std::string& system1, const std::string& system2)
-{
-    auto os1 = system1.substr(system1.find("-"));
-    auto os2 = system2.substr(system2.find("-"));
-    return os1 == os2;
-}
-
-void DerivationGoal::runChild()
-{
-    /* Warning: in the child we should absolutely not make any SQLite
-       calls! */
-
-    try { /* child */
-
-        _writeToStderr = 0;
-
-	if (readiness.writeSide >= 0) readiness.writeSide.close();
-
-	if (readiness.readSide >= 0) {
-	     /* Wait for the parent process to initialize the UID/GID mapping
-		of our user namespace.  */
-	     char str[20] = { '\0' };
-	     readFull(readiness.readSide, (unsigned char*)str, 3);
-	     readiness.readSide.close();
-	     if (strcmp(str, "go\n") != 0)
-		  throw Error("failed to initialize process in unprivileged user namespace");
-	}
-
-        restoreAffinity();
-
-        commonChildInit(builderOut);
-
-#if CHROOT_ENABLED
-        if (useChroot) {
-# if HAVE_SYS_PRCTL_H
-	    /* Drop ambient capabilities such as CAP_CHOWN that might have
-	       been granted when starting guix-daemon.  */
-	    prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0);
-# endif
-
-	    if (!fixedOutput) {
-		/* Initialise the loopback interface. */
-		AutoCloseFD fd(socket(PF_INET, SOCK_DGRAM, IPPROTO_IP));
-		if (fd == -1) throw SysError("cannot open IP socket");
-
-		struct ifreq ifr;
-		strcpy(ifr.ifr_name, "lo");
-		ifr.ifr_flags = IFF_UP | IFF_LOOPBACK | IFF_RUNNING;
-		if (ioctl(fd, SIOCSIFFLAGS, &ifr) == -1)
-		    throw SysError("cannot set loopback interface flags");
-
-		fd.close();
-	    }
-
-            /* Set the hostname etc. to fixed values. */
-            char hostname[] = "localhost";
-            if (sethostname(hostname, sizeof(hostname)) == -1)
-                throw SysError("cannot set host name");
-            char domainname[] = "(none)"; // kernel default
-            if (setdomainname(domainname, sizeof(domainname)) == -1)
-                throw SysError("cannot set domain name");
-
-            /* Make all filesystems private.  This is necessary
-               because subtrees may have been mounted as "shared"
-               (MS_SHARED).  (Systemd does this, for instance.)  Even
-               though we have a private mount namespace, mounting
-               filesystems on top of a shared subtree still propagates
-               outside of the namespace.  Making a subtree private is
-               local to the namespace, though, so setting MS_PRIVATE
-               does not affect the outside world. */
-            if (mount(0, "/", 0, MS_REC|MS_PRIVATE, 0) == -1) {
-                throw SysError("unable to make ‘/’ private mount");
-            }
-
-            /* Bind-mount chroot directory to itself, to treat it as a
-               different filesystem from /, as needed for pivot_root. */
-            if (mount(chrootRootDir.c_str(), chrootRootDir.c_str(), 0, MS_BIND, 0) == -1)
-                throw SysError(format("unable to bind mount ‘%1%’") % chrootRootDir);
-
-            /* Set up a nearly empty /dev, unless the user asked to
-               bind-mount the host /dev. */
-            Strings ss;
-            if (dirsInChroot.find("/dev") == dirsInChroot.end()) {
-                createDirs(chrootRootDir + "/dev/shm");
-                createDirs(chrootRootDir + "/dev/pts");
-                ss.push_back("/dev/full");
-#ifdef __linux__
-                if (pathExists("/dev/kvm"))
-                    ss.push_back("/dev/kvm");
-#endif
-                ss.push_back("/dev/null");
-                ss.push_back("/dev/random");
-                ss.push_back("/dev/tty");
-                ss.push_back("/dev/urandom");
-                ss.push_back("/dev/zero");
-                createSymlink("/proc/self/fd", chrootRootDir + "/dev/fd");
-                createSymlink("/proc/self/fd/0", chrootRootDir + "/dev/stdin");
-                createSymlink("/proc/self/fd/1", chrootRootDir + "/dev/stdout");
-                createSymlink("/proc/self/fd/2", chrootRootDir + "/dev/stderr");
-            }
-
-            /* Fixed-output derivations typically need to access the
-               network, so give them access to /etc/resolv.conf and so
-               on. */
-            if (fixedOutput) {
-		auto files = { "/etc/resolv.conf", "/etc/nsswitch.conf",
-			       "/etc/services", "/etc/hosts" };
-		for (auto & file: files) {
-		    if (pathExists(file)) ss.push_back(file);
-		}
-            }
-
-            for (auto & i : ss) dirsInChroot[i] = i;
-
-	    /* Make new mounts for the store and for /tmp.  That way, when
-	       'chrootRootDir' is made read-only below, these two mounts will
-	       remain writable (the store needs to be writable so derivation
-	       outputs can be written to it, and /tmp is writable by
-	       convention).  */
-	    auto chrootStoreDir = chrootRootDir + settings.nixStore;
-	    if (mount(chrootStoreDir.c_str(), chrootStoreDir.c_str(), 0, MS_BIND, 0) == -1)
-                throw SysError(format("read-write mount of store '%1%' failed") % chrootStoreDir);
-	    auto chrootTmpDir = chrootRootDir + "/tmp";
-	    if (mount(chrootTmpDir.c_str(), chrootTmpDir.c_str(), 0, MS_BIND, 0) == -1)
-                throw SysError(format("read-write mount of temporary directory '%1%' failed") % chrootTmpDir);
-
-            /* Bind-mount all the directories from the "host"
-               filesystem that we want in the chroot
-               environment. */
-            foreach (DirsInChroot::iterator, i, dirsInChroot) {
-                struct stat st;
-                Path source = i->second;
-                Path target = chrootRootDir + i->first;
-                if (source == "/proc") continue; // backwards compatibility
-                if (stat(source.c_str(), &st) == -1)
-                    throw SysError(format("getting attributes of path `%1%'") % source);
-                if (S_ISDIR(st.st_mode))
-                    createDirs(target);
-                else {
-                    createDirs(dirOf(target));
-                    writeFile(target, "");
-                }
-
-		/* Extra flags passed with MS_BIND are ignored, hence the
-		   extra MS_REMOUNT.  */
-                if (mount(source.c_str(), target.c_str(), "", MS_BIND, 0) == -1)
-                    throw SysError(format("bind mount from `%1%' to `%2%' failed") % source % target);
-		if (source.compare(0, settings.nixStore.length(), settings.nixStore) == 0) {
-		     if (mount(source.c_str(), target.c_str(), "", MS_BIND | MS_REMOUNT | MS_RDONLY, 0) == -1)
-			  throw SysError(format("read-only remount of `%1%' failed") % target);
-		}
-            }
-
-            /* Bind a new instance of procfs on /proc to reflect our
-               private PID namespace. */
-            createDirs(chrootRootDir + "/proc");
-            if (mount("none", (chrootRootDir + "/proc").c_str(), "proc", 0, 0) == -1)
-                throw SysError("mounting /proc");
-
-            /* Mount a new tmpfs on /dev/shm to ensure that whatever
-               the builder puts in /dev/shm is cleaned up automatically. */
-            if (pathExists("/dev/shm") && mount("none", (chrootRootDir + "/dev/shm").c_str(), "tmpfs", 0, 0) == -1)
-                throw SysError("mounting /dev/shm");
-
-            /* Mount a new devpts on /dev/pts.  Note that this
-               requires the kernel to be compiled with
-               CONFIG_DEVPTS_MULTIPLE_INSTANCES=y (which is the case
-               if /dev/ptx/ptmx exists). */
-            if (pathExists("/dev/pts/ptmx") &&
-                !pathExists(chrootRootDir + "/dev/ptmx")
-                && dirsInChroot.find("/dev/pts") == dirsInChroot.end())
-            {
-                if (mount("none", (chrootRootDir + "/dev/pts").c_str(), "devpts", 0, "newinstance,mode=0620") == -1)
-                    throw SysError("mounting /dev/pts");
-                createSymlink("/dev/pts/ptmx", chrootRootDir + "/dev/ptmx");
-
-                /* Make sure /dev/pts/ptmx is world-writable.  With some
-                   Linux versions, it is created with permissions 0.  */
-                chmod_(chrootRootDir + "/dev/pts/ptmx", 0666);
-            }
-
-            /* Do the chroot(). */
-            if (chdir(chrootRootDir.c_str()) == -1)
-                throw SysError(format("cannot change directory to '%1%'") % chrootRootDir);
-
-            if (mkdir("real-root", 0) == -1)
-                throw SysError("cannot create real-root directory");
-
-            if (pivot_root(".", "real-root") == -1)
-                throw SysError(format("cannot pivot old root directory onto '%1%'") % (chrootRootDir + "/real-root"));
-
-            if (chroot(".") == -1)
-                throw SysError(format("cannot change root directory to '%1%'") % chrootRootDir);
-
-            if (umount2("real-root", MNT_DETACH) == -1)
-                throw SysError("cannot unmount real root filesystem");
-
-            if (rmdir("real-root") == -1)
-                throw SysError("cannot remove real-root directory");
-
-	    /* Make the root read-only.
-
-	       When build users are disabled, the build process could make it
-	       world-accessible, but that's OK: since 'chrootRootTop' is *not*
-	       world-accessible, a world-accessible 'chrootRootDir' cannot be
-	       used to grant access to the build environment to external
-	       processes.
-
-	       Remounting the root as read-only was rejected because it makes
-	       write access fail with EROFS instead of EACCES, which goes
-	       against what some test suites expect (Go, Ruby, SCons,
-	       Shepherd, to name a few).  */
-	    chmod_("/", 0555);
-
-	    if (getuid() != 0) {
-		/* Create a new mount namespace to "lock" previous mounts.
-		   See mount_namespaces(7).  */
-		auto uid = getuid();
-		auto gid = getgid();
-
-		if (unshare(CLONE_NEWNS | CLONE_NEWUSER) == -1)
-		    throw SysError(format("creating new user and mount namespaces"));
-
-		initializeUserNamespace(getpid(), uid, gid);
-
-		/* Check that mounts within the build environment are "locked"
-		   together and cannot be separated from within the build
-		   environment namespace.  Since
-		   umount(2) is documented to fail with EINVAL when attempting
-		   to unmount one of the mounts that are locked together,
-		   check that this is what we get.  */
-		int ret = umount(tmpDirInSandbox.c_str());
-		assert(ret == -1 && errno == EINVAL);
-	    }
-        }
-#endif
-
-        if (chdir(tmpDirInSandbox.c_str()) == -1)
-            throw SysError(format("changing into `%1%'") % tmpDir);
-
-        /* Close all other file descriptors. */
-        closeMostFDs(set<int>());
-
-#if __linux__
-        /* Change the personality to 32-bit if we're doing an
-           i686-linux build on an x86_64-linux machine. */
-        struct utsname utsbuf;
-        uname(&utsbuf);
-        if (drv.platform == "i686-linux" &&
-            (settings.thisSystem == "x86_64-linux" ||
-             (!strcmp(utsbuf.sysname, "Linux") && !strcmp(utsbuf.machine, "x86_64")))) {
-            if (personality(PER_LINUX32) == -1)
-                throw SysError("cannot set i686-linux personality");
-        }
-
-        if (drv.platform == "armhf-linux" &&
-            (settings.thisSystem == "aarch64-linux" ||
-             (!strcmp(utsbuf.sysname, "Linux") && !strcmp(utsbuf.machine, "aarch64")))) {
-            if (personality(PER_LINUX32) == -1)
-                throw SysError("cannot set armhf-linux personality");
-        }
-
-        /* Impersonate a Linux 2.6 machine to get some determinism in
-           builds that depend on the kernel version. */
-        if ((drv.platform == "i686-linux" || drv.platform == "x86_64-linux") && settings.impersonateLinux26) {
-            int cur = personality(0xffffffff);
-            if (cur != -1) personality(cur | 0x0020000 /* == UNAME26 */);
-        }
-
-        /* Disable address space randomization for improved
-           determinism. */
-        int cur = personality(0xffffffff);
-        if (cur != -1) personality(cur | ADDR_NO_RANDOMIZE);
-
-        /* Ask the kernel to eagerly kill us & our children if it runs out of
-           memory, regardless of blame, to preserve ‘real’ user data & state. */
-        try {
-            writeFile("/proc/self/oom_score_adj", "1000"); // 100%
-        } catch (...) { ignoreException(); }
-#endif
-
-        /* Fill in the environment. */
-        Strings envStrs;
-        foreach (Environment::const_iterator, i, env)
-            envStrs.push_back(rewriteHashes(i->first + "=" + i->second, rewritesToTmp));
-
-        /* If we are running in `build-users' mode, then switch to the
-           user we allocated above.  Make sure that we drop all root
-           privileges.  Note that above we have closed all file
-           descriptors except std*, so that's safe.  Also note that
-           setuid() when run as root sets the real, effective and
-           saved UIDs. */
-        if (buildUser.enabled()) {
-            /* Preserve supplementary groups of the build user, to allow
-               admins to specify groups such as "kvm".  */
-            if (setgroups(buildUser.getSupplementaryGIDs().size(),
-                          buildUser.getSupplementaryGIDs().data()) == -1)
-                throw SysError("cannot set supplementary groups of build user");
-
-            if (setgid(buildUser.getGID()) == -1 ||
-                getgid() != buildUser.getGID() ||
-                getegid() != buildUser.getGID())
-                throw SysError("setgid failed");
-
-            if (setuid(buildUser.getUID()) == -1 ||
-                getuid() != buildUser.getUID() ||
-                geteuid() != buildUser.getUID())
-                throw SysError("setuid failed");
-        }
-
-        restoreSIGPIPE();
-
-        /* Indicate that we managed to set up the build environment. */
-        writeFull(STDERR_FILENO, "\n");
-
-        /* Execute the program.  This should not return. */
-	string builderBasename;
-        if (isBuiltin(drv)) {
-            try {
-                logType = ltFlat;
-
-		auto buildDrv = lookupBuiltinBuilder(drv.builder);
-                if (buildDrv != NULL) {
-		    /* Check what the output file name is.  When doing a
-		       'bmCheck' build, the output file name is different from
-		       that specified in DRV due to hash rewriting.  */
-		    Path output = drv.outputs["out"].path;
-		    auto redirected = redirectedOutputs.find(output);
-		    if (redirected != redirectedOutputs.end())
-			output = redirected->second;
-
-                    buildDrv(drv, drvPath, output);
-		}
-                else
-                    throw Error(format("unsupported builtin function '%1%'") % string(drv.builder, 8));
-                _exit(0);
-            } catch (std::exception & e) {
-                writeFull(STDERR_FILENO, "error: " + string(e.what()) + "\n");
-                _exit(1);
-            }
-        } else {
-	    /* Ensure that the builder is within the store.  This prevents
-	       users from using /proc/self/exe (or a symlink to it) as their
-	       builder, which could allow them to overwrite the guix-daemon
-	       binary (CVE-2019-5736).
-
-	       This attack is possible even if the target of /proc/self/exe is
-	       outside the chroot (it's as if it were a hard link), though it
-	       requires that its ELF interpreter and dependencies be in the
-	       chroot.
-
-	       Note: 'canonPath' throws if 'drv.builder' cannot be resolved
-	       within the chroot.  */
-	    builderBasename = baseNameOf(drv.builder);
-	    drv.builder = canonPath(drv.builder, true);
-
-	    if (!isInStore(drv.builder))
-		throw Error(format("derivation builder '%1%' is outside the store") % drv.builder);
-	}
-
-        /* Fill in the arguments. */
-        Strings args;
-        args.push_back(builderBasename);
-        foreach (Strings::iterator, i, drv.args)
-            args.push_back(rewriteHashes(*i, rewritesToTmp));
-
-	/* If DRV targets the same operating system kernel, try to execute it:
-	   there might be binfmt_misc set up for user-land emulation of other
-	   architectures.  However, if it targets a different operating
-	   system--e.g., "i586-gnu" vs. "x86_64-linux"--do not try executing
-	   it: the ELF file for that OS is likely indistinguishable from a
-	   native ELF binary and it would just crash at run time.  */
-	int error;
-	if (sameOperatingSystemKernel(drv.platform, settings.thisSystem)) {
-	    execve(drv.builder.c_str(), stringsToCharPtrs(args).data(),
-		   stringsToCharPtrs(envStrs).data());
-	    error = errno;
-	} else {
-	    error = ENOEXEC;
-	}
-
-	/* Right platform?  Check this after we've tried 'execve' to allow for
-	   transparent emulation of different platforms with binfmt_misc
-	   handlers that invoke QEMU.  */
-	if (error == ENOEXEC && !canBuildLocally(drv.platform)) {
-	    if (settings.printBuildTrace)
-		printMsg(lvlError, format("@ unsupported-platform %1% %2%") % drvPath % drv.platform);
-	    throw Error(
-		format("a `%1%' is required to build `%3%', but I am a `%2%'")
-		% drv.platform % settings.thisSystem % drvPath);
-	}
-
-	errno = error;
-        throw SysError(format("executing `%1%'") % drv.builder);
-
-    } catch (std::exception & e) {
-        writeFull(STDERR_FILENO, "while setting up the build environment: " + string(e.what()) + "\n");
-        _exit(1);
-    }
-
-    abort(); /* never reached */
 }
 
 
@@ -2469,14 +2992,14 @@ PathSet parseReferenceSpecifiers(const Derivation & drv, string attr)
 {
     PathSet result;
     Paths paths = tokenizeString<Paths>(attr);
-    foreach (Strings::iterator, i, paths) {
-        if (isStorePath(*i))
-            result.insert(*i);
-        else if (drv.outputs.find(*i) != drv.outputs.end())
-            result.insert(drv.outputs.find(*i)->second.path);
+    for (auto& i : paths) {
+        if (isStorePath(i))
+            result.insert(i);
+        else if (drv.outputs.find(i) != drv.outputs.end())
+            result.insert(drv.outputs.find(i)->second.path);
         else throw BuildError(
             format("derivation contains an invalid reference specifier `%1%'")
-            % *i);
+            % i);
     }
     return result;
 }
@@ -2489,8 +3012,8 @@ void DerivationGoal::registerOutputs()
        to do anything here. */
     if (hook) {
         bool allValid = true;
-        foreach (DerivationOutputs::iterator, i, drv.outputs)
-            if (!worker.store.isValidPath(i->second.path)) allValid = false;
+        for (auto& i : drv.outputs)
+            if (!worker.store.isValidPath(i.second.path)) allValid = false;
         if (allValid) return;
     }
 
@@ -2506,8 +3029,8 @@ void DerivationGoal::registerOutputs()
     /* Check whether the output paths were created, and grep each
        output path to determine what other paths it references.  Also make all
        output paths read-only. */
-    foreach (DerivationOutputs::iterator, i, drv.outputs) {
-        Path path = i->second.path;
+    for (auto& i : drv.outputs) {
+        Path path = i.second.path;
         if (missingPaths.find(path) == missingPaths.end()) continue;
 
         Path actualPath = path;
@@ -2569,10 +3092,10 @@ void DerivationGoal::registerOutputs()
         /* Check that fixed-output derivations produced the right
            outputs (i.e., the content hash should match the specified
            hash). */
-        if (i->second.hash != "") {
+        if (i.second.hash != "") {
 
             bool recursive; HashType ht; Hash h;
-            i->second.parseHashInfo(recursive, ht, h);
+            i.second.parseHashInfo(recursive, ht, h);
 
             if (!recursive) {
                 /* The output path should be a regular file without
@@ -2587,7 +3110,7 @@ void DerivationGoal::registerOutputs()
             if (h != h2) {
 		if (settings.printBuildTrace)
 		    printMsg(lvlError, format("@ hash-mismatch %1% %2% %3% %4%")
-			     % path % i->second.hashAlgo
+			     % path % i.second.hashAlgo
 			     % printHash16or32(h) % printHash16or32(h2));
                 throw BuildError(format("hash mismatch for store item '%1%'") % path);
 	    }
@@ -2651,12 +3174,12 @@ void DerivationGoal::registerOutputs()
 
         /* For debugging, print out the referenced and unreferenced
            paths. */
-        foreach (PathSet::iterator, i, inputPaths) {
-            PathSet::iterator j = references.find(*i);
+        for (auto& i : inputPaths) {
+            PathSet::iterator j = references.find(i);
             if (j == references.end())
-                debug(format("unreferenced input: `%1%'") % *i);
+                debug(format("unreferenced input: `%1%'") % i);
             else
-                debug(format("referenced input: `%1%'") % *i);
+                debug(format("referenced input: `%1%'") % i);
         }
 
         /* Enforce `allowedReferences' and friends. */
@@ -2986,12 +3509,12 @@ void DerivationGoal::handleEOF(int fd)
 PathSet DerivationGoal::checkPathValidity(bool returnValid, bool checkHash)
 {
     PathSet result;
-    foreach (DerivationOutputs::iterator, i, drv.outputs) {
-        if (!wantOutput(i->first, wantedOutputs)) continue;
+    for (auto& i : drv.outputs) {
+        if (!wantOutput(i.first, wantedOutputs)) continue;
         bool good =
-            worker.store.isValidPath(i->second.path) &&
-            (!checkHash || worker.store.pathContentsGood(i->second.path));
-        if (good == returnValid) result.insert(i->second.path);
+            worker.store.isValidPath(i.second.path) &&
+            (!checkHash || worker.store.pathContentsGood(i.second.path));
+        if (good == returnValid) result.insert(i.second.path);
     }
     return result;
 }
@@ -3168,7 +3691,7 @@ void SubstitutionGoal::tryNext()
     trace("trying substituter");
 
     SubstitutablePathInfos infos;
-    PathSet dummy(singleton<PathSet>(storePath));
+    PathSet dummy{storePath};
     worker.store.querySubstitutablePathInfos(dummy, infos);
     SubstitutablePathInfos::iterator k = infos.find(storePath);
     if (k == infos.end()) {
@@ -3187,9 +3710,9 @@ void SubstitutionGoal::tryNext()
 
     /* To maintain the closure invariant, we first have to realise the
        paths referenced by this one. */
-    foreach (PathSet::iterator, i, info.references)
-        if (*i != storePath) /* ignore self-references */
-            addWaitee(worker.makeSubstitutionGoal(*i));
+    for (auto& i : info.references)
+        if (i != storePath) /* ignore self-references */
+            addWaitee(worker.makeSubstitutionGoal(i));
 
     if (waitees.empty()) /* to prevent hang (no wake-up event) */
         referencesValid();
@@ -3208,9 +3731,9 @@ void SubstitutionGoal::referencesValid()
         return;
     }
 
-    foreach (PathSet::iterator, i, info.references)
-        if (*i != storePath) /* ignore self-references */
-            assert(worker.store.isValidPath(*i));
+    for (auto& i : info.references)
+        if (i != storePath) /* ignore self-references */
+            assert(worker.store.isValidPath(i));
 
     state = &SubstitutionGoal::tryToRun;
     worker.wakeUp(shared_from_this());
@@ -3243,7 +3766,7 @@ void SubstitutionGoal::tryToRun()
 
     /* Acquire a lock on the output path. */
     outputLock = std::shared_ptr<PathLocks>(new PathLocks);
-    if (!outputLock->lockPaths(singleton<PathSet>(storePath), "", false)) {
+    if (!outputLock->lockPaths(PathSet{storePath}, "", false)) {
         worker.waitForAWhile(shared_from_this());
         return;
     }
@@ -3522,8 +4045,8 @@ void Worker::removeGoal(GoalPtr goal)
     }
 
     /* Wake up goals waiting for any goal to finish. */
-    foreach (WeakGoals::iterator, i, waitingForAnyGoal) {
-        GoalPtr goal = i->lock();
+    for (auto& i : waitingForAnyGoal) {
+        GoalPtr goal = i.lock();
         if (goal) wakeUp(goal);
     }
 
@@ -3576,8 +4099,8 @@ void Worker::childTerminated(pid_t pid, bool wakeSleepers)
     if (wakeSleepers) {
 
         /* Wake up goals waiting for a build slot. */
-        foreach (WeakGoals::iterator, i, wantingToBuild) {
-            GoalPtr goal = i->lock();
+        for (auto& i : wantingToBuild) {
+            GoalPtr goal = i.lock();
             if (goal) wakeUp(goal);
         }
 
@@ -3612,7 +4135,7 @@ void Worker::waitForAWhile(GoalPtr goal)
 
 void Worker::run(const Goals & _topGoals)
 {
-    foreach (Goals::iterator, i,  _topGoals) topGoals.insert(*i);
+    for (auto& i :  _topGoals) topGoals.insert(i);
 
     startNest(nest, lvlDebug, format("entered goal loop"));
 
@@ -3678,12 +4201,12 @@ void Worker::waitForInput()
        deadline for any child. */
     assert(sizeof(time_t) >= sizeof(long));
     time_t nearest = LONG_MAX; // nearest deadline
-    foreach (Children::iterator, i, children) {
-        if (!i->second.respectTimeouts) continue;
+    for (auto& i : children) {
+        if (!i.second.respectTimeouts) continue;
         if (settings.maxSilentTime != 0)
-            nearest = std::min(nearest, i->second.lastOutput + settings.maxSilentTime);
+            nearest = std::min(nearest, i.second.lastOutput + settings.maxSilentTime);
         if (settings.buildTimeout != 0)
-            nearest = std::min(nearest, i->second.timeStarted + settings.buildTimeout);
+            nearest = std::min(nearest, i.second.timeStarted + settings.buildTimeout);
     }
     if (nearest != LONG_MAX) {
         timeout.tv_sec = std::max((time_t) 1, nearest - before);
@@ -3708,10 +4231,10 @@ void Worker::waitForInput()
     fd_set fds;
     FD_ZERO(&fds);
     int fdMax = 0;
-    foreach (Children::iterator, i, children) {
-        foreach (set<int>::iterator, j, i->second.fds) {
-            FD_SET(*j, &fds);
-            if (*j >= fdMax) fdMax = *j + 1;
+    for (auto& i : children) {
+        for (auto& j : i.second.fds) {
+            FD_SET(j, &fds);
+            if (j >= fdMax) fdMax = j + 1;
         }
     }
 
@@ -3729,34 +4252,34 @@ void Worker::waitForInput()
        careful that we don't keep iterators alive across calls to
        timedOut(). */
     set<pid_t> pids;
-    foreach (Children::iterator, i, children) pids.insert(i->first);
+    for (auto& i : children) pids.insert(i.first);
 
-    foreach (set<pid_t>::iterator, i, pids) {
+    for (auto& i : pids) {
         checkInterrupt();
-        Children::iterator j = children.find(*i);
+        Children::iterator j = children.find(i);
         if (j == children.end()) continue; // child destroyed
         GoalPtr goal = j->second.goal.lock();
         assert(goal);
 
         set<int> fds2(j->second.fds);
-        foreach (set<int>::iterator, k, fds2) {
-            if (FD_ISSET(*k, &fds)) {
+        for (auto& k : fds2) {
+            if (FD_ISSET(k, &fds)) {
                 unsigned char buffer[4096];
-                ssize_t rd = read(*k, buffer, sizeof(buffer));
+                ssize_t rd = read(k, buffer, sizeof(buffer));
                 if (rd == -1) {
                     if (errno != EINTR)
                         throw SysError(format("reading from %1%")
                             % goal->getName());
                 } else if (rd == 0) {
                     debug(format("%1%: got EOF") % goal->getName());
-                    goal->handleEOF(*k);
-                    j->second.fds.erase(*k);
+                    goal->handleEOF(k);
+                    j->second.fds.erase(k);
                 } else {
                     printMsg(lvlVomit, format("%1%: read %2% bytes")
                         % goal->getName() % rd);
                     string data((char *) buffer, rd);
                     j->second.lastOutput = after;
-                    goal->handleChildOutput(*k, data);
+                    goal->handleChildOutput(k, data);
                 }
             }
         }
@@ -3786,8 +4309,8 @@ void Worker::waitForInput()
 
     if (!waitingForAWhile.empty() && lastWokenUp + settings.pollInterval <= after) {
         lastWokenUp = after;
-        foreach (WeakGoals::iterator, i, waitingForAWhile) {
-            GoalPtr goal = i->lock();
+        for (auto& i : waitingForAWhile) {
+            GoalPtr goal = i.lock();
             if (goal) wakeUp(goal);
         }
         waitingForAWhile.clear();
@@ -3812,22 +4335,22 @@ void LocalStore::buildPaths(const PathSet & drvPaths, BuildMode buildMode)
     Worker worker(*this);
 
     Goals goals;
-    foreach (PathSet::const_iterator, i, drvPaths) {
-        DrvPathWithOutputs i2 = parseDrvPathWithOutputs(*i);
+    for (auto& i : drvPaths) {
+        DrvPathWithOutputs i2 = parseDrvPathWithOutputs(i);
         if (isDerivation(i2.first))
             goals.insert(worker.makeDerivationGoal(i2.first, i2.second, buildMode));
         else
-            goals.insert(worker.makeSubstitutionGoal(*i, buildMode));
+            goals.insert(worker.makeSubstitutionGoal(i, buildMode));
     }
 
     worker.run(goals);
 
     PathSet failed;
-    foreach (Goals::iterator, i, goals)
-        if ((*i)->getExitCode() == Goal::ecFailed) {
-            DerivationGoal * i2 = dynamic_cast<DerivationGoal *>(i->get());
+    for (auto& i : goals)
+        if (i->getExitCode() == Goal::ecFailed) {
+            DerivationGoal * i2 = dynamic_cast<DerivationGoal *>(i.get());
             if (i2) failed.insert(i2->getDrvPath());
-            else failed.insert(dynamic_cast<SubstitutionGoal *>(i->get())->getStorePath());
+            else failed.insert(dynamic_cast<SubstitutionGoal *>(i.get())->getStorePath());
         }
 
     if (!failed.empty())
@@ -3842,7 +4365,7 @@ void LocalStore::ensurePath(const Path & path)
 
     Worker worker(*this);
     GoalPtr goal = worker.makeSubstitutionGoal(path);
-    Goals goals = singleton<Goals>(goal);
+    Goals goals{goal};
 
     worker.run(goals);
 
@@ -3855,7 +4378,7 @@ void LocalStore::repairPath(const Path & path)
 {
     Worker worker(*this);
     GoalPtr goal = worker.makeSubstitutionGoal(path, true);
-    Goals goals = singleton<Goals>(goal);
+    Goals goals{goal};
 
     worker.run(goals);
 

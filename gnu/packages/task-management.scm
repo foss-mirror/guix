@@ -13,6 +13,7 @@
 ;;; Copyright © 2024 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2025 Ricardo Wurmus <rekado@elephly.net>
 ;;; Copyright © 2025 Matthias Riße <matrss@0px.xyz>
+;;; Copyright © 2025 jgart <jgart@dismail.de>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -59,7 +60,7 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
   #:use-module (gnu packages readline)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
   #:use-module (gnu packages time)
   #:use-module (gnu packages tls)
   #:use-module (gnu packages version-control)
@@ -93,22 +94,23 @@
           (base32 "1nyx80z53xxlbhpb5k22jnv4jajxqhjm0gz7qb18w9pqqlrvkqd4"))))
       (build-system python-build-system)
       (arguments
-       `(#:phases
-         (modify-phases %standard-phases
-           (replace 'check
-             (lambda* (#:key inputs outputs tests? #:allow-other-keys)
-               (setenv "HOME" (getenv "TEMP"))
-               (when tests?
-                 (add-installed-pythonpath inputs outputs)
-                 (invoke "pytest" "-vv")))))))
+       (list
+        #:phases
+        #~(modify-phases %standard-phases
+            (replace 'check
+              (lambda* (#:key inputs outputs tests? #:allow-other-keys)
+                (setenv "HOME" (getenv "TEMP"))
+                (when tests?
+                  (add-installed-pythonpath inputs outputs)
+                  (invoke "pytest" "-vv")))))))
       (native-inputs
-       `(("pytest" ,python-pytest)
-         ("click" ,python-click)))
+       (list python-pytest
+             python-click))
       (inputs
-       `(("click" ,python-click)
-         ("click-default-group" ,python-click-default-group)
-         ("pyyaml" ,python-pyyaml)
-         ("rich" ,python-rich)))
+       (list python-click
+             python-click-default-group
+             python-pyyaml
+             python-rich))
       (home-page "https://github.com/kitplummer/clikan")
       (synopsis "Command-line kanban utility")
       (description
@@ -280,7 +282,7 @@ execution, and libreadline support.")
                  "../timew-1.4.3/completion/timew-completion.bash"
                  (string-append bash-completion-install-dir "/timew"))))))))
     (native-inputs
-     (list ruby-asciidoctor))
+     (list ruby-asciidoctor/minimal))
     (inputs
      (list gnutls python `(,util-linux "lib")))
     (home-page "https://timewarrior.net")

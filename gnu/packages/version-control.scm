@@ -164,7 +164,7 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages readline)
   #:use-module (gnu packages rsync)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
   #:use-module (gnu packages sqlite)
   #:use-module (gnu packages texinfo)
   #:use-module (gnu packages text-editors)
@@ -324,14 +324,14 @@ Python 3.3 and later, rather than on Python 2.")
 (define-public git-minimal
   (package
     (name "git-minimal")
-    (version "2.49.0")
+    (version "2.50.1")
     (source (origin
-             (method url-fetch)
-             (uri (string-append "mirror://kernel.org/software/scm/git/git-"
-                                 version ".tar.xz"))
-             (sha256
-              (base32
-               "0a2nm2szhn47dm0m1f1kmg1rikb7saqj67zr25n9yzhbb77r10b1"))))
+              (method url-fetch)
+              (uri (string-append "mirror://kernel.org/software/scm/git/git-"
+                                  version ".tar.xz"))
+              (sha256
+               (base32
+                "1i4gbin7ah9azaz68j10q9qkdq2bcyv2vm0lvppg3n6bvqv6qgky"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -591,20 +591,7 @@ Python 3.3 and later, rather than on Python 2.")
     (description
      "Git is a free distributed version control system designed to handle
 everything from small to very large projects with speed and efficiency.")
-    ;; XXX: Ignore this CVE to work around a name clash with the unrelated
-    ;; "cpe:2.3:a:jenkins:git" package.  The proper fix is for (guix cve) to
-    ;; account for "vendor names".
-    (properties '((lint-hidden-cve . ("CVE-2018-1000182"
-                                      "CVE-2018-1000110"
-                                      "CVE-2019-1003010"
-                                      "CVE-2020-2136"
-                                      "CVE-2021-21684"
-                                      "CVE-2022-30947"
-                                      "CVE-2022-30948"
-                                      "CVE-2022-30949"
-                                      "CVE-2022-36882"
-                                      "CVE-2022-36883"
-                                      "CVE-2022-36884"))
+    (properties '((lint-hidden-cpe-vendors . ("jenkins"))
                   (upstream-name . "git")))
     (license license:gpl2)
     (home-page "https://git-scm.com/")))
@@ -650,12 +637,13 @@ everything from small to very large projects with speed and efficiency.")
                   (invoke "make" "install-doc")
                   (substitute* "git-subtree"
                     (("/bin/sh") (which "sh"))))))
-            (add-after 'install 'install-info-manual
+            (add-after 'install 'install-doc
               (lambda* (#:key parallel-build? #:allow-other-keys)
                 (define job-count (if parallel-build?
                                       (number->string (parallel-job-count))
                                       "1"))
-                (invoke "make" "-C" "Documentation" "install-info"
+                (invoke "make" "-C" "Documentation"
+                        "install-info" "install-man"
                         "-j" job-count
                         ;; The Makefile refer to 'docbook2x-texi', but our
                         ;; binary is named 'docbook2texi'.
@@ -778,31 +766,10 @@ everything from small to very large projects with speed and efficiency.")
                                       (map last
                                            (append-map
                                             package-transitive-propagated-inputs
-                                            perl-inputs))))))))
-
-                  ;; Tell 'git-submodule' where Perl is.
-                  (wrap-program git-sm
-                    `("PATH" ":" prefix
-                      (,(dirname (search-input-file inputs "bin/perl"))))))))
-            (add-after 'split 'install-man-pages
-              (lambda _
-                (let ((man (string-append #$output "/share/man")))
-                  (mkdir-p man)
-                  (with-directory-excursion man
-                    (invoke
-                     "tar" "xvf"
-                     #$(origin
-                         (method url-fetch)
-                         (uri (string-append
-                               "mirror://kernel.org/software/scm/git/"
-                               "git-manpages-" (package-version this-package)
-                               ".tar.xz"))
-                         (sha256
-                          (base32
-                           "1my4qax2wxlhxsyf3wjxllsc2jy9lm97w78alllrgfjgihb46irf"))))))))))))
+                                            perl-inputs)))))))))))))))
     (native-inputs
      (modify-inputs (package-native-inputs git-minimal)
-       ;; For subtree documentation.
+       ;; For documentation.
        (append asciidoc
                docbook2x
                docbook-xml-4.5
@@ -1110,6 +1077,7 @@ the date of the most recent commit that modified them
                      "TestScript/branch_create_below_with_downstack_history"
                      "TestScript/branch_create_no_verify"
                      "TestScript/branch_onto_two_stacks_with_downstack_history"
+                     "TestScript/branch_restack_conflict_no_edit"
                      "TestScript/branch_split_reassign_submitted"
                      "TestScript/branch_submit_.*"
                      "TestScript/commit_amend_no_verify"
@@ -1193,7 +1161,7 @@ provides an integration with GitHub and GitLab.")
 (define-public got
   (package
     (name "got")
-    (version "0.112")
+    (version "0.115")
     (source (origin
               (method url-fetch)
               (uri
@@ -1202,7 +1170,7 @@ provides an integration with GitHub and GitLab.")
                 version ".tar.gz"))
               (sha256
                (base32
-                "12gx59ki610a9iydscg9jf3m7qcnyx34wmsah26by4hix57njdp3"))))
+                "1rw9i74b4q99ja0j4xckx3bbzl8jixxpfnsjzgw7sx3lqcfbrw5d"))))
     (inputs
      (list libevent
            `(,util-linux "lib")
@@ -1238,7 +1206,11 @@ provides an integration with GitHub and GitLab.")
      "Game of Trees (Got) is a version control system which prioritizes ease of use
 and simplicity over flexibility.")
     (license license:isc)
-    (home-page "https://gameoftrees.org/")))
+    (home-page "https://gameoftrees.org/")
+    (properties
+     ;; Can lint for updates, but not update in place.
+     '((release-monitoring-url . "https://gameoftrees.org/releases/")
+       (lint-hidden-cpe-vendors . ("got_project"))))))
 
 (define-public xdiff
   (let ((revision "0")
@@ -1420,16 +1392,20 @@ write native speed custom Git applications in any language with bindings.")
 (define-public libgit2-1.9
   (package
     (inherit libgit2-1.8)
-    (version "1.9.0")
+    (version "1.9.1")
     (source (origin
               (inherit (package-source libgit2-1.8))
               (uri (git-reference
                     (url "https://github.com/libgit2/libgit2")
                     (commit (string-append "v" version))))
               (file-name (git-file-name "libgit2" version))
+              (patches
+               (search-patches "libgit2-uninitialized-proxy-settings.patch"
+                               "libgit2-proxy-reconnection.patch"
+                               "libgit2-path-max.patch"))
               (sha256
                (base32
-                "06ajn5i5l1209z7x7jxcpw68ph0a6g3q67bmx0jm381rr8cb4zdz"))))))
+                "1k7h0phxz1i8i8qhd4dsyii62f30f33gmrpziqgri1ndnazkf4pz"))))))
 
 (define-public libgit2-1.6
   (package
@@ -1533,6 +1509,45 @@ issue management.")
       (home-page "https://github.com/dspinellis/git-issue")
       (license license:gpl3+))))
 
+(define-public git-credential-oauth
+  (package
+    (name "git-credential-oauth")
+    (version "0.15.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/hickford/git-credential-oauth")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1fid6dl82val6miq61dm203y7k2kzccpmra43fngnqrr1p4hh2pl"))))
+    (build-system go-build-system)
+    (arguments
+     (list
+      #:install-source? #f
+      #:build-flags #~(list (string-append "-ldflags=-X main.version="
+                                           #$version))
+      #:import-path "github.com/hickford/git-credential-oauth"
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'install 'install-manpages
+            (lambda* (#:key import-path #:allow-other-keys)
+              (let ((man (string-append "src/" import-path
+                                        "/git-credential-oauth.1")))
+                (install-file man (string-append #$output "/share/man/man1"))))))))
+    (native-inputs
+     (list go-golang-org-x-oauth2))
+    (home-page "https://github.com/hickford/git-credential-oauth")
+    (synopsis "Git credential helper that securely authenticates using OAuth")
+    (description
+     "git-credential-oauth is a Git credential helper that securely
+authenticates to GitHub, GitLab, BitBucket, Gerrit, Gitea, and Forgejo using
+OAuth.  The first time you authenticate, the helper opens a browser window to
+the host.  Subsequent authentication within storage lifetime is
+non-interactive.")
+    (license license:asl2.0)))
+
 (define-public git-crypt
   (package
     (name "git-crypt")
@@ -1618,10 +1633,93 @@ The aim is to provide confidential, authenticated Git storage and
 collaboration using typical untrusted file hosts or services.")
    (license license:gpl3+)))
 
+(define-public git-repo-go
+  (package
+    (name "git-repo-go")
+    (version "1.0.0")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://github.com/Apteryks/git-repo-go")
+                    (commit (string-append "v" version))))
+              (file-name (git-file-name name version))
+              (sha256
+               (base32
+                "1y310dmpiaii6d84d9pvdv4wz4mx7snbpm7v9n400q0j8qnjal32"))))
+    (build-system go-build-system)
+    (arguments
+     (list
+      #:go go-1.24
+      #:import-path "github.com/Apteryks/git-repo-go"
+      #:build-flags
+      #~(list "-ldflags" (string-append
+                          "-s -w "      ;default ldflags
+                          "-X github.com/Apteryks/git-repo-go/version.Version="
+                          #$version))
+      #:install-source? #f
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'patch-commands
+            (lambda* (#:key inputs #:allow-other-keys)
+              (with-directory-excursion "src/github.com/Apteryks/git-repo-go"
+                (substitute* "config/hooks.go"
+                  ;; The commit-msg hook script is executed by Git during the
+                  ;; tests, so must have a fully referenced /bin/sh shebang.
+                  (("#!/bin/sh")
+                   (format #f "#!~a"
+                           (search-input-file inputs "bin/sh"))))
+                (substitute* "test/t1302-helper-remote-unknown.sh"
+                  ;; This test creates some helper scripts.
+                  (("#!/bin/sh")
+                   (format #f "#!~a" (which "sh")))))))
+          (add-before 'check 'make-HOME-writable
+            (lambda _
+              (setenv "HOME" "/tmp")))
+          (add-after 'install 'functional-check
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (setenv "PATH" (string-append #$output "/bin:"
+                                              (getenv "PATH")))
+                ;; Run the integration test suite.  Parallelism
+                ;; doesn't currently work (see:
+                ;; https://github.com/Apteryks/git-repo-go/issues/1)
+                (setenv "GIT_TEST_OPTS" "--verbose")
+                (invoke "make" "-C"
+                        "src/github.com/Apteryks/git-repo-go/test")))))))
+    (native-inputs
+     (list git-minimal
+           go-github-com-go-git-go-git-v5
+           go-github-com-h2non-gock
+           go-github-com-jiangxin-goconfig
+           go-github-com-jiangxin-multi-log
+           go-github-com-jiu2015-gotestspace
+           go-github-com-mattn-go-isatty
+           go-github-com-mattn-go-shellwords
+           go-github-com-mitchellh-go-homedir
+           go-github-com-spf13-cobra
+           go-github-com-spf13-pflag
+           go-github-com-spf13-viper
+           go-github-com-stretchr-testify
+           go-golang-org-x-crypto
+           go-gopkg-in-yaml-v2
+           perl
+           python-minimal))
+    (inputs
+     (list bash-minimal))
+    (home-page "https://git-repo.info/en/docs/")
+    (synopsis "Git extensions for AGit-Flow and Gerrit servers")
+    (description
+     "@command{git-repo} provides Git extensions for interacting conveniently
+with AGit-Flow or Gerrit servers.  It makes it possible to create, update or
+fetch @acronym{PR, pull requests}, and more.  It is based on the
+@command{repo} tool that was developed for the Gerrit project, but also
+supports AGit-Flow and lifts the requirement to use a manifest file.")
+    (license license:asl2.0)))
+
 (define-public cgit
   ;; Use the latest commit, as the latest tagged release is 5 years old.
-  (let ((commit "994d3fe1a8fa56d5a1dd36aae62c788169160c3a")
-        (rev "9"))
+  (let ((commit "20ac8f55d43bcc789e8ecca1a5c878087394b5e3")
+        (rev "10"))
     (package
       (name "cgit")
       ;; Update the ‘git-source’ input as well.
@@ -1633,7 +1731,7 @@ collaboration using typical untrusted file hosts or services.")
                       (commit commit)))
                 (sha256
                  (base32
-                  "1c38yh4y5xmc8lnf55q46v63vkwpa3vs9mj17a74i66lm8zhrhk7"))
+                  "0jzik8prgv3cmpliqk6amq5vkp465592p3xibac49c4lhim27ckp"))
                 (file-name (git-file-name name version))))
       (build-system gnu-build-system)
       (arguments
@@ -1708,10 +1806,10 @@ collaboration using typical untrusted file hosts or services.")
                ;; Building cgit requires a Git source tree.
                ;; cgit is tightly bound to git.  Use GIT_VER from the Makefile,
                ;; which may not match the current (package-version git).
-               (uri "mirror://kernel.org/software/scm/git/git-2.49.0.tar.xz")
+               (uri "mirror://kernel.org/software/scm/git/git-2.50.1.tar.xz")
                (sha256
                 (base32
-                 "0a2nm2szhn47dm0m1f1kmg1rikb7saqj67zr25n9yzhbb77r10b1"))
+                 "1i4gbin7ah9azaz68j10q9qkdq2bcyv2vm0lvppg3n6bvqv6qgky"))
                (file-name "git-source.tar.xz"))
              bash-minimal
              openssl
@@ -2197,11 +2295,10 @@ Features include:
     (build-system emacs-build-system)
     (arguments
      (list
+      #:tests? #f    ; no tests
+      #:lisp-directory "contrib"
       #:phases
       #~(modify-phases %standard-phases
-          (add-before 'install 'enter-lisp-directory
-            (lambda _
-              (chdir "contrib")))
           (add-before 'install-license-files 'leave-lisp-directory
             (lambda _
               (chdir ".."))))))
@@ -3101,6 +3198,7 @@ patch associated with a particular revision of an RCS file.")
 Configuration Management (SCM).  Using it, you can record the history of
 sources files, and documents.  It fills a similar role to the free software
 RCS, PRCS, and Aegis packages.")
+    (properties '((lint-hidden-cpe-vendors . ("jenkins"))))
     (license license:gpl1+)))
 
 (define-public cvs-fast-export
@@ -4161,8 +4259,8 @@ will reconstruct the object along its delta-base chain and return it.")
                    go-golang-org-x-sync
                    go-golang-org-x-sys)
              ;; make `ronn` available during build for man page generation
-             (if (supported-package? ruby-asciidoctor)
-                 (list ronn-ng ruby-asciidoctor)
+             (if (supported-package? ruby-asciidoctor/minimal)
+                 (list ronn-ng ruby-asciidoctor/minimal)
                  '())))
     (home-page "https://git-lfs.github.com/")
     (synopsis "Git extension for versioning large files")
@@ -4496,7 +4594,7 @@ TkDiff is included for browsing and merging your changes.")
 (define-public qgit
   (package
     (name "qgit")
-    (version "2.10")
+    (version "2.11")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -4505,7 +4603,7 @@ TkDiff is included for browsing and merging your changes.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "10j5xll7ai1rb2ybyblbgqm762bqspffpf33fdr61qdchnp2gkf4"))))
+                "11948zzszi28js3pbxlss8r85jlb6fizxm8f5ljqk67m5qxk2v0f"))))
     (build-system qt-build-system)
     (arguments
      (list #:tests? #f)) ;no tests

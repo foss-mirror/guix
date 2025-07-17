@@ -29,6 +29,7 @@
 ;;; Copyright © 2025 Lars Bilke <lars.bilke@ufz.de>
 ;;; Copyright © 2025 Nicolas Graves <ngraves@ngraves.fr>
 ;;; Copyright © 2025 Nguyễn Gia Phong <mcsinyx@disroot.org>
+;;; Copyright © 2025 Brice Waegeneire <brice@waegenei.re>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -1105,7 +1106,7 @@ projections and coordinate transformations library.")
         (sha256
           (base32
             "083120rqc4rrqzgmams0yjd8b1h4p5xm4n9fnxg064ymw3vx6yan"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
     (arguments
      `(#:phases
        (modify-phases %standard-phases
@@ -1139,7 +1140,11 @@ projections and coordinate transformations library.")
       (list gdal ; for gdal-config
             python-boto3
             python-cython
-            python-pytest python-pytest-cov python-pytz))
+            python-pytest
+            python-pytest-cov
+            python-pytz
+            python-setuptools
+            python-wheel))
     (home-page "https://github.com/Toblerity/Fiona")
     (synopsis
       "Fiona reads and writes spatial data files")
@@ -1503,7 +1508,7 @@ development.")
 (define-public pdal
   (package
     (name "pdal")
-    (version "2.8.4")
+    (version "2.9.0")
     (source
      (origin
        (method git-fetch)
@@ -1512,17 +1517,20 @@ development.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1w6cg9akb46xf6h7cw0nrg109d6n9035qxczk2scvaxg76hgnsz7"))))
+        (base32 "0gckixcykp9di4j7w6zkbhpj2ji1hvk8z3rw58dlqcvi81xcyjfa"))))
     (build-system cmake-build-system)
     (arguments
-     (list #:phases
+     (list
+      #:configure-flags #~(list "-DUSE_EXTERNAL_GTEST=ON")
+      #:phases
            #~(modify-phases %standard-phases
                (replace 'check
                  (lambda* (#:key tests? #:allow-other-keys)
                    (when tests?
-                     (invoke "ctest" "-E" ;; This test hangs.
-                             "pdal_io_stac_reader_test")))))))
-    (native-inputs (list python))
+                     (invoke "ctest" "-E"
+                             ;; This tests needs network .
+                             "pdal_io_(stac|copc)_reader_test")))))))
+    (native-inputs (list python googletest))
     (inputs (list gdal
                   h3
                   libgeotiff
@@ -1870,7 +1878,7 @@ extension.")
         (base32 "1nqzlrzxwhvm7z2pl70bwlr37fz95hcm0n8v7y503krh5x4xl9r3"))))
     (build-system pyproject-build-system)
     (arguments
-     (list 
+     (list
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'udunits-path
@@ -2020,13 +2028,13 @@ to create databases that are optimized for rendering/tile/map-services.")
 (define-public python-metpy
   (package
     (name "python-metpy")
-    (version "1.6.3")
+    (version "1.7.0")
     (source (origin
               (method url-fetch)
               (uri (pypi-uri "metpy" version))
               (sha256
                (base32
-                "0rh7lslwf79sgbf0933pz6mxchbrb0434pbdzqgzs1kjlsli9pr3"))))
+                "1r3adxf6knplp96s5jp65lahg9r096iaq5hdhzyqpkrmqwyy1mxa"))))
     (build-system pyproject-build-system)
     (arguments
      ;; Too many of the tests in the files below require online data.
@@ -2049,7 +2057,9 @@ to create databases that are optimized for rendering/tile/map-services.")
                     " and not test_zoom_xarray"
                     " and not test_parse_wpc_surface_bulletin"
                     " and not test_add_timestamp_xarray"
-                    " and not test_parse_wpc_surface_bulletin_highres"))
+                    " and not test_parse_wpc_surface_bulletin_highres"
+                    " and not test_find_peaks"
+                    " and not test_find_peaks_minima"))
       #:phases
       '(modify-phases %standard-phases
          (add-after 'unpack 'fix-version-check
@@ -2387,7 +2397,7 @@ persisted.
 (define-public libmseed
   (package
     (name "libmseed")
-    (version "3.1.1")
+    (version "3.1.5")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -2396,7 +2406,7 @@ persisted.
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "05sk2h19c7ja98s75b7hbn2cwnjc5l6dr59c23fgnaimmad2rfn7"))))
+                "1xswg62h8mqmgpkllyvj8zyw2sjks7pq2np820xca71ahc89aaiz"))))
     (build-system gnu-build-system)
     (arguments
      (list #:make-flags #~(list (string-append "CC=" #$(cc-for-target))
@@ -2488,6 +2498,7 @@ from multiple records.")
                           "test_coord_transposed"
                           "test_coordinates_pass_0"
                           "test_cube_transposed"
+                          "test_cube_with_deferred_unit_conversion"
                           "test_data_pass_0"
                           "test_destructor"
                           "test_formula_terms_pass_0"
@@ -2549,6 +2560,11 @@ from multiple records.")
                     " and not "))
       #:phases
       #~(modify-phases %standard-phases
+          (add-after 'unpack 'relax-requirements
+            (lambda _
+              (substitute* "requirements/pypi-core.txt"
+                ;; dask[array]>=2022.9.0,!=2024.8.0, <2024.9
+                ((", <2024.9") ""))))
           ;; GeoVista is not packaged yet, "--ignore" option did not work to
           ;; skip test files.
           (add-after 'unpack 'delete-failing-test-files
@@ -2575,8 +2591,8 @@ from multiple records.")
            python-distributed
            python-filelock
            python-imagehash
-           python-pytest-xdist
            python-pytest
+           python-pytest-xdist
            python-setuptools
            python-setuptools-scm
            python-wheel))
@@ -2684,7 +2700,7 @@ to the OSM opening hours specification.")
 (define-public josm
   (package
     (name "josm")
-    (version "19253")
+    (version "19412")
     (source (origin
               (method svn-fetch)
               (uri (svn-reference
@@ -2693,7 +2709,7 @@ to the OSM opening hours specification.")
                      (recursive? #f)))
               (sha256
                (base32
-                "1k5v591mkh0xkyfj66qmv1mamqsqw347nhax5hlwyg8hgfk7a6xr"))
+                "152pf0ww16jj5cv94ywlv5nb8pvnyqmvmnwsy3w0lf094faqkv5d"))
               (file-name (string-append name "-" version "-checkout"))
               (modules '((guix build utils)))
             (snippet
@@ -2716,11 +2732,11 @@ to the OSM opening hours specification.")
            java-parsson ; runtime dependency
            java-signpost-core
            java-svg-salamander
-           openjdk11))
+           openjdk17))
     (arguments
      `(#:tests? #f
        #:jar-name "josm.jar"
-       #:jdk ,openjdk11
+       #:jdk ,openjdk17
        #:phases
        (modify-phases %standard-phases
          (add-after 'unpack 'rm-build.xml
@@ -3693,15 +3709,16 @@ SET\\(PYQT5_SIP_DIR \"\\$\\{Python_SITEARCH\\}/PyQt5/bindings\"\\)")
            python-dateutil
            python-future
            python-jinja2
+           python-lxml
            python-numpy
            python-owslib
            python-psycopg2
            python-pygments
-           python-pyqt+qscintilla
+           python-pyqt+qscintilla-with-python-sip-6.8
            python-pytz
            python-pyyaml
            python-requests
-           python-sip
+           python-sip-6.8
            python-six
            python-urllib3
            qca

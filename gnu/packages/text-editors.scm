@@ -25,7 +25,7 @@
 ;;; Copyright © 2022 Foo Chuan Wei <chuanwei.foo@hotmail.com>
 ;;; Copyright © 2022 zamfofex <zamfofex@twdb.moe>
 ;;; Copyright © 2022 Jai Vetrivelan <jaivetrivelan@gmail.com>
-;;; Copyright © 2022, 2024 jgart <jgart@dismail.de>
+;;; Copyright © 2022, 2024-2025 jgart <jgart@dismail.de>
 ;;; Copyright © 2022 Andy Tai <atai@atai.org>
 ;;; Copyright © 2022 ( <paren@disroot.org>
 ;;; Copyright © 2023 Eidvilas Markevičius <markeviciuseidvilas@gmail.com>
@@ -121,7 +121,6 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
   #:use-module (gnu packages regex)
-  #:use-module (gnu packages ruby)
   #:use-module (gnu packages sdl)
   #:use-module (gnu packages slang)
   #:use-module (gnu packages sqlite)
@@ -233,8 +232,8 @@ intuitive, while also taking advantage of the capabilities of modern terminals."
       (license license:expat))))
 
 (define-public lem
-  (let ((commit "96aec3ab957607e0ff35ff018d5e05ec4d52faa0")
-        (revision "6"))
+  (let ((commit "0025e1c196b50fbf6b8a97f8b9ef986f8d316cdf")
+        (revision "8"))
     (package
       (name "lem")
       (version (git-version "2.2.0" revision commit))
@@ -245,7 +244,7 @@ intuitive, while also taking advantage of the capabilities of modern terminals."
                (url "https://github.com/lem-project/lem/")
                (commit commit)))
          (sha256
-          (base32 "1087s9vylx319mz7ld73f4h71gh62hw2f64a94dz9m25cqhsiq6d"))
+          (base32 "06hd0n66q69nr15ypdmwlwl6m9l2pzj6fym7dm8v2zp165pgr7s1"))
          (file-name (git-file-name name version))
          (snippet
           #~(begin
@@ -348,7 +347,7 @@ intuitive, while also taking advantage of the capabilities of modern terminals."
 (define-public vis
   (package
     (name "vis")
-    (version "0.8")                     ; also update the vis-test input
+    (version "0.9")                     ; also update the vis-test input
     (source
      (origin
        (method git-fetch)
@@ -356,7 +355,7 @@ intuitive, while also taking advantage of the capabilities of modern terminals."
              (url "https://git.sr.ht/~martanne/vis")
              (commit (string-append "v" version))))
        (sha256
-        (base32 "0ija192c9i13gbikm707jynf6my212i040ls0f8pgkbiyvls7xay"))
+        (base32 "0y5b434dg7h5m1z0rz40ypirh99sm77mvvg8r1fp79z1bk73g0s9"))
        (file-name (git-file-name name version))))
     (build-system gnu-build-system)
     (arguments
@@ -399,9 +398,9 @@ intuitive, while also taking advantage of the capabilities of modern terminals."
            (method git-fetch)
            (uri (git-reference
                  (url "https://git.sr.ht/~martanne/vis-test")
-                 (commit "bbd2f34ff788e87a51a74069069273ad83c44f1f")))
+                 (commit "783b7ef67aa360f0b9bd44fa5ea47e644bc49d69")))
            (sha256
-            (base32 "1jsvg2lg3xqfgi79x08kx94mc34mh62ivca10vsci6fqsk68jbd0"))
+            (base32 "1lhcizf93gab4hgnpac7l9csmhhvh0i7rd71p3vfk00nrdqrqrb6"))
            (file-name (git-file-name "vis-test" version))))))
     (inputs (list bash-minimal lua ncurses libtermkey lua-lpeg tre))
     (synopsis "Vim-like text editor")
@@ -418,7 +417,7 @@ based command language.")
 (define-public kakoune
   (package
     (name "kakoune")
-    (version "2024.05.18")
+    (version "2025.06.03")
     (source
      (origin
        (method url-fetch)
@@ -426,7 +425,7 @@ based command language.")
                            "releases/download/v" version "/"
                            "kakoune-" version ".tar.bz2"))
        (sha256
-        (base32 "1ymr1jpdnd5wj6npzi8bgfd30d0j885sfnhl236rn7fjc4pars6s"))))
+        (base32 "16b466anx7gf1jci3gxj87xr5qw9fgyhpc3509myzf6z3cgr9mff"))))
     (build-system gnu-build-system)
     (arguments
      `(#:make-flags
@@ -1016,13 +1015,13 @@ OpenBSD team.")
 (define-public nano
   (package
     (name "nano")
-    (version "8.4")
+    (version "8.5")
     (source
      (origin
       (method url-fetch)
       (uri (string-append "mirror://gnu/nano/nano-" version ".tar.xz"))
       (sha256
-       (base32 "13b2iqmbx5vcyd0rnvvc9l8l79q6665r4xx6gvc28mnmpci95ljs"))))
+       (base32 "0sn2aikbqyvq5d46x7fkx33gaprjaj7jhhvdckwil54w6cfh22q0"))))
     (build-system gnu-build-system)
     (arguments
      (if (%current-target-system)
@@ -1857,7 +1856,7 @@ commands.")
 (define-public lite-xl
   (package
     (name "lite-xl")
-    (version "2.1.3")
+    (version "2.1.8")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -1866,10 +1865,10 @@ commands.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "19wdq8w6ickyynx6r2wg2vf5isl2577zjizgwbzql9vhqdsi8ag3"))))
+                "1lf6l6r02hp641n6wnfp7xmx54r32hv8whf7bd5nhf3gzvnl76pl"))))
     (build-system meson-build-system)
     (arguments (list #:configure-flags #~'("-Duse_system_lua=true")))
-    (inputs (list lua-5.4 pcre2 freetype sdl2))
+    (inputs (list lua-5.4 pcre2 freetype libdecor sdl3))
     (native-inputs (list pkg-config))
     (home-page "https://lite-xl.com")
     (synopsis "Lightweight text editor written in Lua")

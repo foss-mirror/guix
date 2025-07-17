@@ -99,14 +99,14 @@
 (define-public hello
   (package
     (name "hello")
-    (version "2.12.1")
+    (version "2.12.2")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://gnu/hello/hello-" version
                                   ".tar.gz"))
               (sha256
                (base32
-                "086vqwk2wl8zfs47sq2xpjc9k066ilmb8z6dn0q6ymwjzlm196cd"))))
+                "1aqq1379syjckf0wdn9vs6wfbapnj9zfikhiykf29k4jq9nrk6js"))))
     (build-system gnu-build-system)
     (synopsis "Example GNU package")
     (description
@@ -341,57 +341,25 @@ differences.")
      (home-page "https://savannah.gnu.org/projects/patch/"))))
 
 (define-public patch
-  ;; The latest release is from 2018, and lacks multiple security related
-  ;; patches.  Since Fedora carries 23 patches, simply use the latest commit
-  ;; until a proper release is made.
-  (let ((revision "0")
-        (commit "f144b35425d9d7732ea5485034c1a6b7a106ab92")
-        (base patch/pinned))
-    (package
-      (inherit base)
-      (name "patch")
-      (version (git-version "2.7.6" revision commit))
-      (source (origin
-                (method git-fetch)
-                (uri (git-reference
-                      (url "https://git.savannah.gnu.org/git/patch.git")
-                      (commit commit)))
-                (file-name (git-file-name name version))
-                (sha256
-                 (base32
-                  "1bk38169c0xh01b0q0zmnrjqz8k9byz3arp4q7q66sn6xwf94nvz"))
-                (patches (search-patches "patch-hurd-path-max.patch"))))
-      (arguments
-       (let ((arguments
-         (substitute-keyword-arguments (package-arguments base)
-           ((#:phases phases '%standard-phases)
-            #~(modify-phases #$phases
-                (add-after 'unpack 'copy-gnulib-sources
-                  (lambda _
-                    ;; XXX: We copy the source instead of using 'gnulib' as a
-                    ;; native input to avoid introducing a dependency cycle.
-                    (copy-recursively #+gnulib "gnulib")
-                    (setenv "GNULIB_SRCDIR"
-                            (string-append (getcwd) "/gnulib/src/gnulib"))))
-                (add-after 'copy-gnulib-sources 'update-bootstrap-script
-                  (lambda _
-                    (copy-file "gnulib/src/gnulib/build-aux/bootstrap"
-                               "bootstrap")))
-                (add-after 'unpack 'patch-configure.ac
-                  (lambda _
-                    (substitute* "configure.ac"
-                      ;; The gnulib-provided git-version-gen script has a plain
-                      ;; shebang of #!/bin/sh; avoid using it.
-                      (("build-aux/git-version-gen" all)
-                       (string-append "sh " all))))))))))
-         (if (target-hurd64?)
-             (substitute-keyword-arguments arguments
-               ((#:configure-flags flags '())
-                #~(list "--disable-threads"
-                        "gl_cv_func_working_mktime=yes")))
-             arguments)))
-      (native-inputs (list autoconf automake bison ed))
-      (properties '()))))
+  (package
+    (inherit patch/pinned)
+    (name "patch")
+    (version "2.8")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append "mirror://gnu/patch/patch-"
+                                  version ".tar.xz"))
+              (sha256
+               (base32
+                "1qssgwgy3mfahkpgg99a35gl38vamlqb15m3c2zzrd62xrlywz7q"))))
+    (arguments
+     (substitute-keyword-arguments (package-arguments patch/pinned)
+       ((#:configure-flags flags #~'())
+        (if (and (target-hurd?) (not (target-64bit?)))
+            #~(cons* "--disable-year2038"
+                     #$flags)
+            flags))))
+    (properties '())))
 
 (define-public diffutils
   (package
@@ -814,6 +782,36 @@ included.")
                   #~())))))
     (native-inputs (modify-inputs (package-native-inputs binutils)
                      (append bc)))))
+
+(define-public libbfd
+  (package/inherit binutils
+    (name "libbfd")
+    (inputs
+     (modify-inputs (package-native-inputs binutils)
+       (append texinfo))) ; because makeinfo is needed when building bfd alone
+    (arguments
+     (substitute-keyword-arguments (package-arguments binutils)
+       ;; Only build as a shared library
+       ((#:configure-flags flags)
+        #~(append #$flags '("--enable-shared" "--disable-static")))
+       ;; Only build and install bfd
+       ((#:phases phases #~%standard-phases)
+        #~(modify-phases #$phases
+            (replace 'build
+              (lambda _
+                (invoke "make" "-j" (number->string (parallel-job-count))
+                        "all-bfd")))
+            (replace 'check
+              (lambda _
+                (invoke "make" "check-bfd"
+                        "-j" (number->string (parallel-job-count))
+                        "MAKEINFO=true")))
+            (replace 'install
+              (lambda _ (invoke "make" "install-bfd")))))))
+    (synopsis "GNU BFD library for operating on object files")
+    (description "This package provides a standalone shared library version of
+BFD, which is otherwise distributed and installed as part of the Binutils
+package release.")))
 
 (define* (make-ld-wrapper name #:key
                           (target (const #f))

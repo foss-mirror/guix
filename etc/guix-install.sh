@@ -51,6 +51,8 @@
 # installation required the user to extract Guix packs under /gnu to
 # satisfy its dependencies.
 
+# shellcheck shell=bash
+
 # shellcheck disable=2268 # try to support vintage shells
 if [ "x$BASH_VERSION" = "x" ]; then
     exec bash "$0" "$@"
@@ -66,7 +68,6 @@ REQUIRE=(
     "wget"
     "gpg"
     "grep"
-    "which"
     "sed"
     "sort"
     "getent"
@@ -456,11 +457,11 @@ create_account()
     if id "$user" &>/dev/null; then
 	_msg_info "user '$user' is already in the system, reset"
 	usermod -g "$group" -G "$supplementary_groups"	\
-		-d /var/empty -s "$(which nologin)"	\
+		-d /var/empty -s "$(command -v nologin)"	\
 		-c "$comment" "$user"
     else
 	useradd -g "$group" -G "$supplementary_groups"	\
-		-d /var/empty -s "$(which nologin)"	\
+		-d /var/empty -s "$(command -v nologin)"	\
 		-c "$comment" --system "$user"
 	_msg_pass "user added <$user>"
     fi
@@ -510,7 +511,7 @@ sys_create_build_user()
 	fi
 
 	create_account guix-daemon guix-daemon		\
-		       guix-daemon$KVMGROUP		\
+		       guix-daemon"$KVMGROUP"		\
 		       "Unprivileged Guix Daemon User"
 
 	# ‘tar xf’ creates root:root files.  Change that.
@@ -879,8 +880,8 @@ sys_maybe_setup_selinux()
 
 sys_delete_init_profile()
 {
-    _msg_info "removing /etc/profile.d/guix.sh"
-    rm -f /etc/profile.d/guix.sh
+    _msg_info "removing /etc/profile.d/zzz-guix.sh"
+    rm -f /etc/profile.d/zzz-guix.sh
 }
 
 sys_delete_user_profiles()

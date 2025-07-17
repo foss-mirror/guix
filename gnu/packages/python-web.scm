@@ -38,7 +38,7 @@
 ;;; Copyright © 2020 Holger Peters <holger.peters@posteo.de>
 ;;; Copyright © 2020 Noisytoot <noisytoot@gmail.com>
 ;;; Copyright © 2020 Edouard Klein <edk@beaver-labs.com>
-;;; Copyright © 2020, 2021, 2022, 2023 Vinicius Monego <monego@posteo.net>
+;;; Copyright © 2020, 2021, 2022, 2023, 2025 Vinicius Monego <monego@posteo.net>
 ;;; Copyright © 2020 Konrad Hinsen <konrad.hinsen@fastmail.net>
 ;;; Copyright © 2020, 2022, 2024 Giacomo Leidi <goodoldpaul@autistici.org>
 ;;; Copyright © 2020 Raghav Gururajan <raghavgururajan@disroot.org>
@@ -75,6 +75,7 @@
 ;;; Copyright © 2025 Daniel Ziltener <dziltener@lyrion.ch>
 ;;; Copyright © 2025 gemmaro <gemmaro.dev@gmail.com>
 ;;; Copyright © 2025 Sergio Pastor Pérez <sergio.pastorperez@gmail.com>
+;;; Copyright © 2025 Jake Forster <jakecameron.forster@gmail.com>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -149,6 +150,59 @@
   #:use-module (gnu packages xml)
   #:use-module (gnu packages)
   #:use-module (srfi srfi-1))
+
+(define-public python-aiocoap
+  (package
+    (name "python-aiocoap")
+    (version "0.4.14")
+    (source
+     (origin
+       (method git-fetch) ; tests miss data and module files in PyPI release
+       (uri (git-reference
+             (url "https://github.com/chrysn/aiocoap")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0yxvcg5llgmccv0a9hfm4nr7zxv9al4wh257m95a06g5c52v6hxz"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:test-flags
+      ;; OSError: [Errno 98] error while attempting to bind on address ('::1',
+      ;; 8683, 0, 0): address already in use
+      #~(list "--ignore=tests/test_server.py"
+              "-k" (string-join
+                    ;; TypeError: can only concatenate str (not "NoneType") to
+                    ;; str
+                    (list "not test_options"
+                          "test_uri_parser"
+                          "test_help"    ; returned non-zero exit status 1.
+                          "test_routing" ; address already in use
+                          "test_tls")
+                    " and not "))))
+    (native-inputs
+     (list openssl ;for tests/test_tls.py
+           python-pytest
+           python-setuptools
+           python-wheel))
+    (propagated-inputs
+     (list ;; python-cbor-diag
+           python-cbor2
+           python-cryptography
+           ;; python-dtlssocket
+           python-filelock
+           ;; python-ge25519
+           python-pygments
+           python-termcolor
+           python-websockets))
+    (home-page "https://github.com/chrysn/aiocoap")
+    (synopsis "Python CoAP library")
+    (description
+     "The aiocoap package is an implementation of @url{@acronym{CoAP, the
+Constrained Application Protocol}, http://coap.space/}.  It facilitates
+writing applications that talk to network enabled embedded
+@acronym{IoT,Internet of Things} devices.")
+    (license license:expat)))
 
 (define-public python-devpi-common
   (package
@@ -325,6 +379,50 @@ server process.")
     (synopsis "Pypi.org caching server")
     (description "This package implements a reliable private and pypi.org
 caching server.")
+    (license license:expat)))
+
+(define-public python-dicomweb-client
+  (package
+    (name "python-dicomweb-client")
+    (version "0.60.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/ImagingDataCommons/dicomweb-client")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1zad0905cc4jy4hnh9yhcw63bg25f7xa33x9rj9fhh5r4fznha8d"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'remove-dynamic-versioning
+            (lambda _
+              (substitute* "pyproject.toml"
+                ;; Dynamic versioning via 'uv-dynamic-versioning' is
+                ;; not suitable for Guix.
+                (("dynamic = \\[\"version\"\\]")
+                 (string-append "version = \""
+                                #$version "\""))))))))
+    (native-inputs
+     (list python-hatchling
+           python-pytest
+           python-pytest-localserver))
+    (propagated-inputs
+     (list python-numpy
+           python-pillow
+           python-pydicom
+           python-requests
+           python-retrying))
+    (home-page "https://github.com/ImagingDataCommons/dicomweb-client")
+    (synopsis "Python client for DICOMweb RESTful services")
+    (description
+     "@code{dicomweb_client} provides client intefaces for DICOMweb RESTful
+services QIDO-RS, WADO-RS and STOW-RS to search, retrieve and store
+DICOM objects over the web, respectively.")
     (license license:expat)))
 
 (define-public python-docusign-esign
@@ -551,6 +649,48 @@ that is similar to threading, but provide the benefits of non-blocking I/O.
 The event dispatch is implicit, which means you can easily use @code{Eventlet}
 from the Python interpreter, or as a small part of a larger application.")
     (license license:expat)))
+
+(define-public python-globus-sdk
+  (package
+    (name "python-globus-sdk")
+    (version "3.56.0")
+    (source
+     (origin
+       (method git-fetch)               ;no tests in PyPI archive
+       (uri (git-reference
+             (url "https://github.com/globus/globus-sdk-python")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "11nljda2ir4gna4xa5vkj5nzxnjwadkh97qplkk9nrj44szphnzw"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:test-flags
+      #~(list "--numprocesses" (number->string (min 8 (parallel-job-count))))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'check 'pre-check
+            (lambda _ (setenv "HOME" "/tmp"))))))
+    (native-inputs
+     (list python-flaky
+           python-pytest
+           python-pytest-randomly
+           python-pytest-xdist
+           python-responses
+           python-setuptools
+           python-wheel))
+    (propagated-inputs
+     (list python-cryptography
+           python-importlib-resources
+           python-pyjwt
+           python-requests))
+    (home-page "https://github.com/globus/globus-sdk-python")
+    (synopsis "Globus SDK for Python")
+    (description
+     "This package provides a SDK for convenient Pythonic interface to
+@url{https://www.globus.org/, Globus} APIs.")
+    (license license:asl2.0)))
 
 (define-public python-hookdns
   (package
@@ -2655,22 +2795,34 @@ object graph to and from JSON.")
 (define-public python-mechanicalsoup
   (package
     (name "python-mechanicalsoup")
-    (version "1.0.0")
+    (version "1.4.0")
     (source
      (origin
        (method url-fetch)
-       (uri (pypi-uri "MechanicalSoup" version))
+       (uri (pypi-uri "mechanicalsoup" version))
        (sha256
-        (base32 "01sddjxy3rznh63hnl5lbv1hhk6xyiviwmkiw4x7v4ap35fb3lrp"))))
-    (build-system python-build-system)
+        (base32 "0k1ac77ld6jyjm5fsr44399l5gmiwnz5w6s74i3qqx2scfbsgs6w"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      ;; The following dependencies are not directly required, the developer
+      ;; only pinned versions because of vulnerabilities.  They also break
+      ;; sanity-check because it checks for a python-certifi version which is
+      ;; more recent than the one available in Guix.
+      #:phases #~(modify-phases %standard-phases
+                   (add-after 'unpack 'relax-dependencies
+                     (lambda _
+                       (substitute* "requirements.txt"
+                         (("certifi.*") "")
+                         (("urllib3.*") "")))))))
     (propagated-inputs
-     (list python-beautifulsoup4 python-lxml python-requests python-six))
+     (list python-beautifulsoup4 python-lxml python-requests))
     (native-inputs
-     (list python-pytest-cov
+     (list python-pytest
+           python-pytest-cov
            python-pytest-flake8
            python-pytest-httpbin
            python-pytest-mock
-           python-pytest-runner
            python-requests-mock
            python-setuptools
            python-wheel))
@@ -3031,20 +3183,21 @@ the Misaka Markdown parser.")
 (define-public python-flask-session
   (package
     (name "python-flask-session")
-    (version "0.4.0")
+    (version "0.8.0")
     (source
      (origin
        (method url-fetch)
-       (uri (pypi-uri "Flask-Session" version))
+       (uri (pypi-uri "flask_session" version))
        (sha256
         (base32
-         "0ihzlhdhss8f93p3njzva9rdm7kmhaakdlzz680wmi583wr59vf9"))))
-    (build-system python-build-system)
+         "1zs20zpq6gxz9gsccbd2jrrbbcfvh0x9z9741gkr8dhh07mlbq10"))))
+    (build-system pyproject-build-system)
     (arguments
      '(#:tests? #f)) ; Tests require the various storage backends to be present
+    (native-inputs (list python-flit-core))
     (propagated-inputs
-     (list python-cachelib python-flask))
-    (home-page "https://github.com/fengsp/flask-session")
+     (list python-cachelib python-flask python-msgspec))
+    (home-page "https://github.com/pallets-eco/flask-session")
     (synopsis "Adds server-side session support to your Flask application")
     (description
      "Flask-Session is an extension for Flask that adds support for
@@ -3795,26 +3948,16 @@ teams extension for python-openid.")
 (define-public python-priority
   (package
     (name "python-priority")
-    (version "1.3.0")
+    (version "2.0.0")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "priority" version))
        (sha256
-        (base32 "1gpzn9k9zgks0iw5wdmad9b4dry8haiz2sbp6gycpjkzdld9dhbb"))))
-    (build-system python-build-system)
-    (arguments
-     `(#:phases
-       (modify-phases %standard-phases
-         (replace 'check
-           (lambda* (#:key inputs outputs #:allow-other-keys)
-             (add-installed-pythonpath inputs outputs)
-             (invoke "pytest" "-vv" "test" "-k"
-                     ;; This test exceeded the Hypothesis deadline.
-                     "not test_period_of_repetition"))))))
+        (base32 "1h0qpa949bxx7za95v1apwnngkrngi695cwx8wchn3cd3d7xarf9"))))
+    (build-system pyproject-build-system)
     (native-inputs
-     (list python-hypothesis python-pytest python-pytest-cov
-           python-pytest-xdist))
+     (list python-pytest python-setuptools python-wheel))
     (home-page "https://python-hyper.org/projects/priority/en/latest/")
     (synopsis "Pure-Python implementation of the HTTP/2 priority tree")
     (description
@@ -10091,14 +10234,14 @@ GCS, Azure Blob Storage, gzip, bz2, etc.)")
 (define-public python-w3lib
   (package
     (name "python-w3lib")
-    (version "2.1.2")
+    (version "2.3.1")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "w3lib" version))
        (sha256
         (base32
-         "1cd4b3w5g3pfccsg79kjj27fwi216ip927rjq7isp8pfjzlp8nzd"))))
+         "1929layzxwdnf43hhrz7rabv388b2yibj7mnq9s62mr760mc12jw"))))
     (build-system pyproject-build-system)
     (native-inputs
      (list python-pytest python-setuptools python-wheel))
@@ -10414,40 +10557,31 @@ by asyncio.")
 (define-public python-protego
   (package
     (name "python-protego")
-    (version "0.2.1")
+    (version "0.4.0")
     (source
       (origin
         (method url-fetch)
-        (uri (pypi-uri "Protego" version))
+        (uri (pypi-uri "protego" version))
         (sha256
-          (base32 "1wigcjyhz8zbk562zhgfbkm733dcn65j1swzvki79dys0i1nsrnz"))))
-    (build-system python-build-system)
-    (arguments
-     `(#:phases
-        (modify-phases %standard-phases
-          (replace 'check
-            (lambda* (#:key tests? #:allow-other-keys)
-              (when tests?
-                (invoke "pytest")))))))
-    (propagated-inputs (list python-six))
-    (native-inputs (list python-pytest))
+          (base32 "1xn2aska8v94jqnbyv4ywczb55gaqvr298q8ybhs168knrifd9ck"))))
+    (build-system pyproject-build-system)
+    (native-inputs (list python-pytest python-setuptools python-wheel))
     (home-page "https://github.com/scrapy/protego")
-    (synopsis
-      "Pure-Python robots.txt parser with support for modern conventions")
-    (description
-      "Pure-Python robots.txt parser with support for modern conventions.")
+    (synopsis "Python robots.txt parser with support for modern conventions")
+    (description "Protego is a pure-Python @file{robots.txt} parser with support
+for modern conventions.")
     (license license:bsd-3)))
 
 (define-public python-parsel
   (package
     (name "python-parsel")
-    (version "1.8.1")
+    (version "1.10.0")
     (source
       (origin
         (method url-fetch)
         (uri (pypi-uri "parsel" version))
         (sha256
-          (base32 "0f8yh30y3961a7kqwcnp4j3s7044ilakykiavc0skwdkr5l8xwmg"))))
+          (base32 "1050v20gzijfcaxpm1d4bvxqw2l7xhyf9pxrawrv8lczanwpvw8l"))))
     (build-system pyproject-build-system)
     (propagated-inputs
       (list python-cssselect
@@ -10467,13 +10601,13 @@ regular expressions.")
 (define-public python-scrapy
   (package
     (name "python-scrapy")
-    (version "2.12.0")
+    (version "2.13.1")
     (source
      (origin
        (method url-fetch)
        (uri (pypi-uri "scrapy" version))
        (sha256
-        (base32 "13vqykvjv9d0hj02l0s025r107dncfj7as0r0iv484lv01v6wvfn"))))
+        (base32 "18anr8jjjqyv6pfzdm4fr5hx4vddb8qclyja0y874f5slcnsfsrx"))))
     (build-system pyproject-build-system)
     (arguments
      (list #:test-flags
@@ -10484,6 +10618,8 @@ regular expressions.")
                                  (list "test_pformat"
                                        "test_pformat_old_windows"
                                        "test_pformat_windows"
+                                       ;; AssertionError.
+                                       "test_start_deprecated_super"
                                        ;; Connection refused.
                                        "test_persist")
                                  " and not "))
@@ -10517,6 +10653,7 @@ regular expressions.")
            python-zope-interface))
     (native-inputs
      (list nss-certs-for-test
+           python-hatchling
            python-mypy
            python-pexpect
            python-pytest

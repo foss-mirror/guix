@@ -29,6 +29,7 @@
 ;;; Copyright © 2023 Benjamin Slade <slade@lambda-y.net>
 ;;; Copyright © 2024 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2024 Aaron Covrig <aaron.covrig.us@ieee.org>
+;;; Copyright © 2025 Jussi Timperi <jussi.timperi@iki.fi>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -56,6 +57,7 @@
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system cmake)
   #:use-module (guix build-system meson)
+  #:use-module (guix build-system ocaml)
   #:use-module (guix build-system pyproject)
   #:use-module (guix build-system python)
   #:use-module (guix build-system qt)
@@ -95,6 +97,7 @@
   #:use-module (gnu packages man)
   #:use-module (gnu packages markup)
   #:use-module (gnu packages nss)
+  #:use-module (gnu packages ocaml)
   #:use-module (gnu packages ocr)
   #:use-module (gnu packages pcre)
   #:use-module (gnu packages perl)
@@ -158,6 +161,88 @@ It does not have a document model and instead uses PDF primitives
 directly.  It uses LittleCMS for color management but otherwise does not
 convert data in any way.")
     (license license:asl2.0)))
+
+(define-public cpdf
+  (package
+    (name "cpdf")
+    (version "2.8.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/johnwhitington/cpdf-source")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0dn4lxbnj7izrpxshil1wcvpc60yv9mwfy52dndpi9b66rm3rbih"))))
+    (build-system ocaml-build-system)
+    (arguments
+     (list
+      #:tests? #f ;no tests
+      #:phases
+        #~(modify-phases %standard-phases
+            (delete 'configure)
+            (add-after 'unpack 'patch-makefile-shell
+              (lambda _
+                (patch-makefile-SHELL "OCamlMakefile")))
+            (add-after 'install 'install-bin
+              (lambda _
+                (let ((bin (string-append #$output "/bin")))
+                  (install-file "cpdf" bin))))
+            (add-after 'install-bin 'install-doc
+              (lambda _
+                (let ((doc (string-append #$output "/share/doc/"
+                                          #$name "-" #$version))
+                      (man1 (string-append #$output "/share/man/man1")))
+                  (install-file "cpdf.1" man1)
+                  (install-file "cpdfmanual.pdf" doc)
+                  (copy-recursively "doc/cpdf/html"
+                                    (string-append doc "/html"))))))))
+    (propagated-inputs (list ocaml-camlpdf))
+    (home-page "https://www.coherentpdf.com")
+    (synopsis "Command-line tool for PDF manipulation")
+    (description
+     "The cpdf package provides a command-line tool and an OCaml library
+designed for manipulating PDF documents.  Key Features include:
+
+@itemize @bullet
+@item
+Splitting and merging PDF files (including bookmark preservation and
+splitting on bookmarks).
+@item
+Encryption and decryption (supports AES 128 and AES 256).
+@item
+Page manipulation: scaling, rotation, cropping, and flipping; fitting
+pages to a specific size.
+@item
+Bookmark management: copying, removing, and adding bookmarks.
+@item
+Watermarking: stamping logos, page numbers, and multi-line text with
+transparency support.
+@item
+Text and font handling: embedding TrueType fonts, supporting Unicode
+UTF-8 input and output, and converting text to PDF.
+@item
+Presentation features: creating PDF-based presentations and arranging
+multiple pages on a single page.
+@item
+Annotation management: listing, copying, setting, and removing
+annotations.
+@item
+Metadata management: reading and setting document information and
+metadata.
+@item
+Attachment handling: adding and removing file attachments to documents
+or pages.
+@item
+Advanced features: thickening hairlines, blackening text,
+reconstructing malformed files, detecting missing fonts and
+low-resolution images, exporting/importing in JSON format, and
+building table of contents.
+@item
+Drawing: Adding graphics and text directly onto PDF files.
+@end itemize")
+    (license license:agpl3+)))
 
 (define-public a4pdf
   (deprecated-package "a4pdf" capypdf))
@@ -1478,13 +1563,13 @@ manage or manipulate PDFs.")
        (file-name (git-file-name name version))
        (sha256
         (base32 "045a6j5mh2ixrx3awrpfqh6l3x61i4jrv8r73xz1mvw0bc97lxbc"))))
-    (build-system python-build-system)
+    (build-system pyproject-build-system)
     (arguments
      (list
       #:tests? #f                       ;no tests
       #:phases
       #~(modify-phases %standard-phases
-          (add-after 'install 'wrap-for-typelib
+          (add-after 'wrap 'wrap-for-typelib
             (lambda _
               (let ((program (string-append #$output "/bin/pdfarranger")))
                 (wrap-program program
@@ -1495,7 +1580,8 @@ manage or manipulate PDFs.")
               (setenv "HOME" "/tmp"))))))
     (native-inputs
      (list intltool
-           python-distutils-extra))
+           python-setuptools
+           python-wheel))
     (inputs
      (list bash-minimal
            gtk+
@@ -1749,65 +1835,67 @@ Keywords: html2pdf, htmltopdf")
     (license license:bsd-3)))
 
 (define-public sioyek
-  (package
-    (name "sioyek")
-    (version "2.0.0")
-    (source
-     (origin
-       (method git-fetch)
-       (uri (git-reference
-             (url "https://github.com/ahrm/sioyek")
-             (commit (string-append "v" version))))
-       (file-name (git-file-name name version))
-       (sha256
-        (base32 "1vmmp2s032ygh1byz77pg9aljmp8hx745fr7mmz11831f96mlmhq"))
-       (modules '((guix build utils)))
-       ;; libmupdf-third.so no longer available since mupdf 1.18.0.
-       (snippet '(substitute* "pdf_viewer_build_config.pro"
-                   (("-lmupdf-third") "")))
-       ;; XXX: Fix build with mupdf-0.23.0+.
-       ;; See also: https://github.com/ahrm/sioyek/issues/804
-       (patches (search-patches "sioyek-fix-build.patch"))))
-    (build-system qt-build-system)
-    (arguments
-     (list
-      #:configure-flags
-      #~(list (string-append "PREFIX=" #$output))
-      #:test-target "check"
-      #:phases
-      #~(modify-phases %standard-phases
-          (add-after 'unpack 'patch-paths
-            (lambda _
-              (substitute* "pdf_viewer/main.cpp"
-                (("/usr/share")
-                 (string-append #$output "/share"))
-                (("/etc")
-                 (string-append #$output "/etc")))))
-          (replace 'configure
-            (lambda* (#:key configure-flags #:allow-other-keys)
-              (apply invoke "qmake" configure-flags)))
-          (add-after 'install 'instal-man-page
-            (lambda _
-              (install-file "resources/sioyek.1"
-                            (string-append #$output "/share/man/man1")))))))
-    (inputs
-     (list freetype
-           gumbo-parser
-           harfbuzz
-           jbig2dec
-           libjpeg-turbo
-           mujs
-           mupdf
-           openjpeg
-           qt3d-5
-           qtbase-5
-           qtwayland-5
-           zlib))
-    (home-page "https://sioyek.info/")
-    (synopsis "PDF viewer with a focus on technical books and research papers")
-    (description
-     "Sioyek is a PDF viewer with a focus on textbooks and research papers.")
-    (license license:gpl3+)))
+  (let ((commit "8d173d993738d78559da035cc051f2eb40df41e6")
+        (revision "1"))
+    (package
+      (name "sioyek")
+      (version (git-version "2.0.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/ahrm/sioyek")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "10d08ajcm5ckvrj5xkgi0dj9ibndi961v2yacw7a8mxkdqki6ck6"))
+         (modules '((guix build utils)))
+         ;; libmupdf-third.so no longer available since mupdf 1.18.0.
+         (snippet '(substitute* "pdf_viewer_build_config.pro"
+                     (("-lmupdf-third") "")))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        #:configure-flags
+        #~(list (string-append "PREFIX=" #$output))
+        #:test-target "check"
+        #:phases
+        #~(modify-phases %standard-phases
+            (add-after 'unpack 'patch-paths
+              (lambda _
+                (substitute* "pdf_viewer/main.cpp"
+                  (("/usr/share")
+                   (string-append #$output "/share"))
+                  (("/etc")
+                   (string-append #$output "/etc")))))
+            (replace 'configure
+              (lambda* (#:key configure-flags #:allow-other-keys)
+                (apply invoke "qmake" configure-flags)))
+            (add-after 'install 'instal-man-page
+              (lambda _
+                (install-file "resources/sioyek.1"
+                              (string-append #$output "/share/man/man1")))))))
+      (inputs
+       (list freetype
+             gumbo-parser
+             harfbuzz
+             jbig2dec
+             libjpeg-turbo
+             mujs
+             mupdf
+             openjpeg
+             qtbase
+             qtdeclarative
+             qtsvg
+             qt3d
+             qtspeech
+             qtwayland
+             zlib))
+      (home-page "https://sioyek.info/")
+      (synopsis "PDF viewer with a focus on technical books and research papers")
+      (description
+       "Sioyek is a PDF viewer with a focus on textbooks and research papers.")
+      (license license:gpl3+))))
 
 (define-public pdftk
   (package

@@ -336,7 +336,7 @@ static void performOp(bool trusted, unsigned int clientVersion,
     case wopHasSubstitutes: {
         Path path = readStorePath(from);
         startWork();
-        PathSet res = store->querySubstitutablePaths(singleton<PathSet>(path));
+        PathSet res = store->querySubstitutablePaths(PathSet{path});
         stopWork();
         writeInt(res.find(path) != res.end(), to);
         break;
@@ -656,7 +656,7 @@ static void performOp(bool trusted, unsigned int clientVersion,
         Path path = absPath(readString(from));
         startWork();
         SubstitutablePathInfos infos;
-        store->querySubstitutablePathInfos(singleton<PathSet>(path), infos);
+        store->querySubstitutablePathInfos(PathSet{path}, infos);
         stopWork();
         SubstitutablePathInfos::iterator i = infos.find(path);
         if (i == infos.end())
@@ -679,12 +679,12 @@ static void performOp(bool trusted, unsigned int clientVersion,
         store->querySubstitutablePathInfos(paths, infos);
         stopWork();
         writeInt(infos.size(), to);
-        foreach (SubstitutablePathInfos::iterator, i, infos) {
-            writeString(i->first, to);
-            writeString(i->second.deriver, to);
-            writeStrings(i->second.references, to);
-            writeLongLong(i->second.downloadSize, to);
-            writeLongLong(i->second.narSize, to);
+        for (auto& i : infos) {
+            writeString(i.first, to);
+            writeString(i.second.deriver, to);
+            writeStrings(i.second.references, to);
+            writeLongLong(i.second.downloadSize, to);
+            writeLongLong(i.second.narSize, to);
         }
         break;
     }
@@ -963,7 +963,10 @@ static void acceptConnection(int fdSocket)
 	    clientPid = cred.pid;
 	    clientUid = cred.uid;
 	    clientGid = cred.gid;
-	    trusted = clientUid == 0;
+
+	    /* The root user is always trusted; additionally, when running as
+	       an unprivileged user, that user is also trusted.  */
+	    trusted = (clientUid == 0) || (clientUid == getuid());
 
             struct passwd * pw = getpwuid(cred.uid);
             string user = pw ? pw->pw_name : std::to_string(cred.uid);

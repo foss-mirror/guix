@@ -98,6 +98,7 @@
   #:use-module (gnu packages qt)
   #:use-module (gnu packages readline)
   #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages shells)
   #:use-module (gnu packages tcl)
   #:use-module (gnu packages time)
@@ -766,6 +767,7 @@ of user-specified directories similar to how shells look up executables.")
                      (string-append "File.join(\"" ptex "\"")))
                   (invoke "ruby" "generate-ptex-patterns.rb"))))))))
     (native-inputs
+     ;; TODO: Update to ruby@3 on next rebuild-cycle.
      (list ruby-2.7
            ruby-hydra-minimal/pinned
            ;; Build phase requires "docstrip.tex" from TEXLIVE-LATEX.
@@ -77530,7 +77532,7 @@ develop documents with LaTeX, in a single application.")
 (define-public texstudio
   (package
     (name "texstudio")
-    (version "4.8.7")
+    (version "4.8.8")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -77539,7 +77541,7 @@ develop documents with LaTeX, in a single application.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1z17j1wggs8fgjqk0mrqqwh7xcsmzckfhlpwc7aykr65ii4gqizz"))))
+                "0w4cgvbkw6l5bl84fr03vk903hw2akm6fhy92rj9fyyfd2fi0ybv"))))
     (build-system qt-build-system)
     (arguments
      `(#:tests? #f))                    ;tests work only with debug build
@@ -84269,7 +84271,21 @@ configuration of its own fixed names, using @file{.mld} files.")
     (outputs '("out" "doc"))
     (build-system texlive-build-system)
     (arguments
-     (list #:link-scripts #~(list "latexminted.py")))
+     (list
+      #:link-scripts #~(list "latexminted.py")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'link-scripts 'wrap-latexminted
+            ;; `latexminted' relies on SELFAUTOLOC to locate `kpsewhich', but
+            ;; this variable is bogus in Guix because binaries are scattered
+            ;; across multiple directories.  This phase sets SELFAUTOLOC to
+            ;; the specific directory containing `kpsewhich'.
+            (lambda* (#:key inputs outputs #:allow-other-keys)
+              ;; XXX: Use `wrap-program' rather than `wrap-script' because
+              ;; with the latter, ".whl" files are not properly recognized.
+              (wrap-program (search-input-file outputs "bin/latexminted")
+                `("SELFAUTOLOC" =
+                  (,(dirname (search-input-file inputs "bin/kpsewhich"))))))))))
     (inputs (list python))
     (propagated-inputs
      (list texlive-catchfile

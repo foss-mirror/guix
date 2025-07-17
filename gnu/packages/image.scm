@@ -39,6 +39,7 @@
 ;;; Copyright © 2023-2024 Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;;; Copyright © 2023, 2025 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2024 chris <chris@bumblehead.com>
+;;; Copyright © 2025 Josep Bigorra <jjbigorra@gmail.com>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -80,6 +81,7 @@
   #:use-module (gnu packages gnome)
   #:use-module (gnu packages graphics)
   #:use-module (gnu packages gtk)
+  #:use-module (gnu packages guile)
   #:use-module (gnu packages imagemagick)
   #:use-module (gnu packages lua)
   #:use-module (gnu packages man)
@@ -113,6 +115,7 @@
   #:use-module (guix build-system gnu)
   #:use-module (guix build-system cmake)
   #:use-module (guix build-system copy)
+  #:use-module (guix build-system guile)
   #:use-module (guix build-system meson)
   #:use-module (guix build-system python)
   #:use-module (guix build-system qt)
@@ -163,6 +166,41 @@
     (description
      "Converseen is an image batch conversion tool.  You can resize and
 convert images in more than 100 different formats.")
+    (license license:gpl3+)))
+
+(define-public gradia
+  (package
+    (name "gradia")
+    (version "1.2.1")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                     (url "https://github.com/AlexanderVanhee/Gradia")
+                     (commit (string-append "v" version))))
+              (file-name (git-file-name name version))
+              (sha256
+               (base32 "07hal4h3kkjf7la02nqmqgw19sa6hkd130bkfmgwjimkv9zi8z2i"))))
+    (build-system meson-build-system)
+    (arguments
+     (list #:glib-or-gtk? #t
+           #:phases
+           #~(modify-phases %standard-phases
+               (add-after 'unpack 'skip-gtk-update-icon-cache
+                 (lambda _
+                   (substitute* "meson.build"
+                     (("gtk_update_icon_cache: true")
+                      "gtk_update_icon_cache: false")
+                     (("update_desktop_database: true")
+                      "update_desktop_database: false")))))))
+    (inputs (list gtk libadwaita python python-pygobject))
+    (native-inputs
+     (list blueprint-compiler gettext-minimal `(,glib "bin") pkg-config))
+    (home-page "https://github.com/AlexanderVanhee/Gradia")
+    (synopsis "Edit screenshots")
+    (description "Gradia is a GTK 4 application for enhancing and preparing
+screenshots for blogs, social media, and documentation.  It supports background
+customization, annotation tools (pen, arrow, text, highlight, stamp), padding,
+cropping, and various export formats.")
     (license license:gpl3+)))
 
 (define-public iqa
@@ -1364,6 +1402,57 @@ graphics image formats like PNG, BMP, JPEG, TIFF and others.")
     (license license:gpl2+)
     (home-page "https://freeimage.sourceforge.io/")))
 
+(define-public ggg
+  (package
+    (name "ggg")
+    (version "0.3.13")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://codeberg.org/jjba23/ggg.git")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0l0pbnp2jqi25s5hcqh2dhbdhcig4zyjx2cxwijbb5nn5shrp1wj"))))
+    (arguments
+     `(#:source-directory "src"
+       #:phases (modify-phases %standard-phases
+                  (add-before 'build 'install-program-files
+                    (lambda* (#:key outputs #:allow-other-keys)
+                      (let ((bin (string-append (assoc-ref outputs "out")
+                                                "/bin"))
+                            (share (string-append (assoc-ref outputs "out")
+                                                  "/share")))
+                        (mkdir-p (string-append share "/scripts"))
+                        (mkdir-p (string-append share "/resources"))
+                        (install-file "resources/help.txt"
+                                      (string-append share
+                                                     "/resources"))
+                        (copy-recursively "resources/svg-paths"
+                                          (string-append share
+                                           "/resources/svg-paths"))
+                        (install-file "scripts/ggg" bin)
+                        (install-file "scripts/log.sh"
+                                      (string-append share "/scripts/"))
+                        (chmod (string-append bin "/ggg") #o755)))))))
+    (build-system guile-build-system)
+    (native-inputs (list guile-3.0))
+    (inputs (list guile-3.0 bash-minimal))
+    (synopsis
+     "GGG is a SVG image generator for project and web badges")
+    (description
+     "GGG (Guile Glyph Generator) is a command-line utility
+that allows you to generate pretty images/badges which can be used for
+your projects, announcing tech used, sponsoring and appreciating
+other projects, distinguishing versions of things supported, etc.
+
+GGG is highly configurable, reads Scheme files where you define your tasks,
+and supports badges between one and three parts.  It leverages SVG generation
+from Lisp and S-expressions, building pixel perfect badges.")
+    (home-page "https://codeberg.org/jjba23/ggg")
+    (license license:agpl3+)))
+
 (define-public vigra
   (package
     (name "vigra")
@@ -2053,36 +2142,30 @@ custom formats for representing color values..")
   (package
     (name "gpick")
     (version "0.2.6")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://github.com/thezbyg/gpick")
-                    (commit (string-append name "-" version))))
-              (file-name (git-file-name name version))
-              (sha256
-               (base32
-                "0nl89gca5nmbyycv5rl5bm6k7facapdk4pab9pl949aa3cjw9bk7"))))
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/thezbyg/gpick")
+             (commit (string-append name "-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0nl89gca5nmbyycv5rl5bm6k7facapdk4pab9pl949aa3cjw9bk7"))))
     (build-system scons-build-system)
-    (native-inputs
-     `(("boost" ,boost)
-       ("gettext" ,gettext-minimal)
-       ("pkg-config" ,pkg-config)
-       ("ragel" ,ragel)))
-    (inputs
-     `(("expat" ,expat)
-       ("gtk2" ,gtk+-2)
-       ("lua" ,lua-5.2)))
     (arguments
-     `(#:tests? #f
-       #:scons ,scons-python2
-       #:scons-flags (list (string-append "DESTDIR=" %output))
-       #:phases
-       (modify-phases %standard-phases
-         (add-before 'build 'fix-lua-reference
-           (lambda _
-             (substitute* "SConscript"
-               (("lua5.2") "lua-5.2"))
-             #t)))))
+     (list
+      #:tests? #f
+      #:scons-flags
+      #~(list (string-append "DESTDIR=" %output))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'build 'fix-lua-reference
+            (lambda _
+              (substitute* "SConscript"
+                (("lua5.2")
+                 "lua-5.2")))))))
+    (native-inputs (list boost gettext-minimal pkg-config ragel))
+    (inputs (list expat gtk+-2 lua-5.2))
     (home-page "http://www.gpick.org/")
     (synopsis "Color picker")
     (description "Gpick is an advanced color picker and palette editing tool.")
@@ -2113,29 +2196,51 @@ parsing, viewing, modifying, and saving this metadata.")
     (license license:lgpl2.0+)))
 
 (define-public flameshot
-  (package
-    (name "flameshot")
-    (version "12.1.0")
-    (source
-     (origin
-       (method git-fetch)
-       (uri (git-reference
-             (url "https://github.com/flameshot-org/flameshot")
-             (commit (string-append "v" version))))
-       (file-name (git-file-name name version))
-       (sha256
-        (base32
-         "1p7gqs5vqzbddlgl38lbanchwb14m6lx8f2cn2c5p0vyqwvqqv52"))))
-    (build-system qt-build-system)
-    (native-inputs
-     (list qttools-5))
-    (inputs
-     (list qtbase-5 qtsvg-5))
-    (arguments
-     `(#:tests? #f))                    ;no tests
-    (home-page "https://github.com/flameshot-org/flameshot")
-    (synopsis "Powerful yet simple to use screenshot software")
-    (description "Flameshot is a screenshot program.
+  ;; Upstream switched to nightly builds, no release tags anymore.
+  (let ((commit "56019019999defbf722f43f87aaeae6596a12c0a")
+        (revision "1"))
+    (package
+      (name "flameshot")
+      (version (git-version "12.1.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/flameshot-org/flameshot")
+               (commit (string-append commit))))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32
+           "11y1x2pc0sdmz4dbrdl9d2i96sxi3v7bfjgcaqy2sc29zjjvynqx"))))
+      (build-system qt-build-system)
+      (arguments
+       (list
+        #:qtbase qtbase
+        #:tests? #f                     ;no tests
+        #:configure-flags
+        #~(list "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+                "-DDISABLE_UPDATE_CHECKER=ON")
+        #:phases
+        #~ (modify-phases %standard-phases
+             (add-before 'configure 'add-singleapplication
+               (lambda* (#:key inputs #:allow-other-keys)
+                 (let ((dep (assoc-ref inputs "single-application")))
+                   (substitute* "CMakeLists.txt"
+                     (("^if\\(USE_SINGLEAPPLICATION\\)" all)
+                      (string-append
+                       all
+                       "\nadd_library(SingleApplication::SingleApplication"
+                       " SHARED IMPORTED)"
+                       "\nset_target_properties(SingleApplication::SingleApplication"
+                       " PROPERTIES"
+                       "\n   INTERFACE_INCLUDE_DIRECTORIES \"" dep "/include\""
+                       "\n   IMPORTED_LOCATION " dep "/lib/libSingleApplication.a"
+                       "\n)\n")))))))))
+      (native-inputs (list qttools))
+      (inputs (list single-application qtcolorwidgets qtsvg))
+      (home-page "https://github.com/flameshot-org/flameshot")
+      (synopsis "Powerful yet simple to use screenshot software")
+      (description "Flameshot is a screenshot program.
 Features:
 
 @itemize
@@ -2145,12 +2250,12 @@ Features:
 @item DBus interface.
 @item Upload to Imgur.
 @end itemize\n")
-    (license license:gpl3+)))
+      (license license:gpl3+))))
 
 (define-public swappy
   (package
     (name "swappy")
-    (version "1.4.0")
+    (version "1.5.1")
     (source
      (origin
        (method git-fetch)
@@ -2159,7 +2264,7 @@ Features:
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1s2lp3bz30svqdg6467jvncim0qgl0q1b1nqxnnci6kljbp5g0xh"))))
+        (base32 "0fh85brivyz9knby9cda4jd1kw6kkxzbqz9rf2y8i5q8vz5yywzx"))))
     (build-system meson-build-system)
     (native-inputs
      (list pkg-config scdoc
@@ -2924,4 +3029,31 @@ terminal imaging introduced by @acronym{DEC, Digital Equipment Corp.}.  Its
 data scheme is represented as a terminal-friendly escape sequence.  So if you
 want to view a SIXEL image file, all you have to do is @command{cat} it to
 your terminal.")
+    (license license:expat)))
+
+(define-public libyuv
+  (package
+    (name "libyuv")
+    (version "2021.4")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+	     (url "https://chromium.googlesource.com/libyuv/libyuv")
+	     (commit "4620f1705822fd6ab99939f43ce63099bd3d9ae0")))
+       (sha256
+	(base32 "17vdm2g5qvrby7xa3agiqwh7ips33dxg6sw18s3q2xkfil4xw3mm"))))
+    (build-system cmake-build-system)
+    (arguments (list #:tests? #f))
+    (home-page "https://chromium.googlesource.com/libyuv/libyuv/")
+    (synopsis "YUV scaling and conversion functionality")
+    (description "libyuv is an open source project that includes YUV scaling and
+conversion functionality. It can:
+@itemize
+@item Scale YUV to prepare content for compression, with point, bilinear or box
+filter.
+@item Convert to YUV from webcam formats for compression.
+@item Convert to RGB formats for rendering/effects.
+@item Rotate by 90/180/270 degrees to adjust for mobile devices in portrait mode.
+@end itemize")
     (license license:expat)))

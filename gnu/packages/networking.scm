@@ -26,7 +26,7 @@
 ;;; Copyright © 2018, 2020-2022 Marius Bakke <marius@gnu.org>
 ;;; Copyright © 2018, 2020, 2021, 2022 Oleg Pykhalov <go.wigust@gmail.com>
 ;;; Copyright © 2018 Pierre Neidhardt <mail@ambrevar.xyz>
-;;; Copyright © 2019, 2020, 2021, 2022, 2023, 2024 Maxim Cournoyer <maxim.cournoyer@gmail.com>
+;;; Copyright © 2019-2025 Maxim Cournoyer <maxim.cournoyer@gmail.com>
 ;;; Copyright © 2019 Vasile Dumitrascu <va511e@yahoo.com>
 ;;; Copyright © 2019 Julien Lepiller <julien@lepiller.eu>
 ;;; Copyright © 2019 Timotej Lazar <timotej.lazar@araneo.si>
@@ -151,6 +151,7 @@
   #:use-module (gnu packages libusb)
   #:use-module (gnu packages linux)
   #:use-module (gnu packages logging)
+  #:use-module (gnu packages lxqt)
   #:use-module (gnu packages lua)
   #:use-module (gnu packages kerberos)
   #:use-module (gnu packages man)
@@ -276,6 +277,49 @@ servers.  It tries to be as light as possible, so it might be useful
 on byte-critical systems.  It supports HTTP, HTTPS, FTP and FTPS
 protocols.")
     (license license:gpl2+)))
+
+(define-public lcagent
+  (package
+    (name "lcagent")
+    (version "0.1.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://codeberg.org/librecast/lcagent")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "120a850dbwy3kq6iw2s9sdffvrxj3a85zjiaw2ldgy4mkr1xbg9a"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:parallel-tests? #f
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'set-bin-sh
+            (lambda _
+              (substitute* "src/agent.c"
+                (("/bin/sh")
+                 (which "sh"))))))
+      #:make-flags
+      #~(list (string-append "CC="
+                             #$(cc-for-target))
+              (string-append "PREFIX="
+                             #$output))
+      #:test-target "test"))
+    (inputs (list lcrq
+                  libsodium
+                  librecast))
+    (native-inputs (list bison
+                         flex))
+    (synopsis "Librecast multicast agent")
+    (description
+     "lcagent can send and receive data over multicast and to pipe
+data between programs on one computer and as many receivers as the multicast
+network can support simultaneously.")
+    (home-page "https://librecast.net/lcagent.html")
+    (license (list license:gpl2 license:gpl3))))
 
 (define-public lcrq
   (package
@@ -553,7 +597,7 @@ GLib-based library, libnice, as well as GStreamer elements to use it.")
 (define-public librecast
   (package
     (name "librecast")
-    (version "0.10.0")
+    (version "0.11.2")
     (source
      (origin
        (method git-fetch)
@@ -562,7 +606,7 @@ GLib-based library, libnice, as well as GStreamer elements to use it.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "04h7hzm0j9cvcd5skrbnyd69pidbrxzqsnciz0yxwbb883nd5kmq"))))
+        (base32 "06185zz2glfzqvnz579byvfhrzqw1j0fhxkwrcnzfvp8fiaacnql"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -1425,17 +1469,29 @@ transparently check connection attempts against an access control list.")
 (define-public zeromq
   (package
     (name "zeromq")
-    (version "4.3.4")
+    (version "4.3.5")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://github.com/zeromq/libzmq/releases"
                            "/download/v" version "/zeromq-" version ".tar.gz"))
        (sha256
-        (base32 "1rf3jmi36ms8jh2g5cvi253h43l6xdfq0r7mvp95va7mi4d014y5"))))
+        (base32 "0hxbpw9sk9g5ilxfnq3iki6nxjh3igk348z73y358ygi21cyylv6"))))
     (build-system gnu-build-system)
-    (arguments '(#:configure-flags '("--disable-static"
-                                     "--enable-drafts")))
+    (arguments
+     (list
+      #:configure-flags #~(list "--disable-static"
+                                "--enable-drafts")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'disable-problematic-tests
+            (lambda _
+              ;; Avoid the 'reconnect_stop_on_refused' test, which fails
+              ;; non-deterministically (see:
+              ;; https://github.com/zeromq/libzmq/issues/4793).
+              (substitute* "Makefile.in"
+                  (("@ENABLE_DRAFTS_TRUE@\ttests/test_reconnect_options.*")
+                   "")))))))
     (home-page "https://zeromq.org")
     (synopsis "Library for message-based applications")
     (description
@@ -2156,22 +2212,22 @@ reusing frequently-requested web pages.")
         (base32 "1gpp2l3w479h1w5skjra5xy0gxd24kvmk6i4psbkafnv2399la4k"))))
     (build-system gnu-build-system)
     (arguments
-     `(#:phases
-       (modify-phases %standard-phases
-         (add-after 'unpack 'disable-premature-./configure
-           (lambda _
-             (substitute* "autogen.sh"
-               (("\\$srcdir/configure")
-                "true"))
-             #t)))))
+     (list #:phases
+           #~(modify-phases %standard-phases
+               (add-after 'unpack 'disable-premature-./configure
+                 (lambda _
+                   (substitute* "autogen.sh"
+                     (("\\$srcdir/configure")
+                      "true")))))))
     (native-inputs
      (list autoconf automake))
     (inputs
-     (list ncurses))
+     (list libstatgrab ncurses))
     (synopsis "Console based live network and disk I/O bandwidth monitor")
     (description "Bandwidth Monitor NG is a small and simple console based
 live network and disk I/O bandwidth monitor.")
     (home-page "https://www.gropp.org/?id=projects&sub=bwm-ng")
+    (properties '((lint-hidden-cpe-vendors . ("bwm-ng_project"))))
     (license license:gpl2)))
 
 (define-public aircrack-ng
@@ -2358,7 +2414,7 @@ private (reserved).")
 (define-public perl-net-dns
  (package
   (name "perl-net-dns")
-  (version "1.31")
+  (version "1.50")
   (source
     (origin
       (method url-fetch)
@@ -2369,7 +2425,8 @@ private (reserved).")
         (string-append "mirror://cpan/authors/id/N/NL/NLNETLABS/Net-DNS-"
                        version ".tar.gz")))
       (sha256
-       (base32 "05f6rzvvmm6xd0p100k5y9kczdzqgala09ra8bccc18n6y74l0h0"))))
+       (base32
+         "14x95g8bqicvlc6fljrw5mhba1czdw5jdx6r2qmsmrcnkl5m0q66"))))
   (build-system perl-build-system)
   (inputs
     (list perl-digest-hmac))
@@ -2846,12 +2903,13 @@ the bandwidth, loss, and other parameters.")
     (inputs
      (list libpcap ncurses))
     (arguments
-     `(#:make-flags `(,,(string-append "CC=" (cc-for-target))
-                      ,(string-append "PREFIX=" %output)
-                      ,(string-append "VERSION=" ,version))
+     (list #:make-flags #~(list (string-append "CC=" #$(cc-for-target))
+                                (string-append "CXX=" #$(cxx-for-target))
+                                (string-append "PREFIX=" #$output)
+                                (string-append "VERSION=" #$version))
        #:phases
-       (modify-phases %standard-phases
-         (delete 'configure))))         ; no ./configure script.
+       #~(modify-phases %standard-phases
+           (delete 'configure))))         ; no ./configure script.
     (home-page "https://github.com/raboof/nethogs")
     (synopsis "Per-process bandwidth monitor")
     (description "NetHogs is a small 'net top' tool for Linux.  Instead of
@@ -3480,7 +3538,7 @@ from user-space.  It requires a kernel built with SocketCAN support.")
 (define-public can-utils
   (package
     (name "can-utils")
-    (version "2020.02.04")
+    (version "2025.01")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -3489,17 +3547,16 @@ from user-space.  It requires a kernel built with SocketCAN support.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1a3j1mmnb7pvgc8r7zzp6sdp7903in2hna6bmpraxln7cwlzn4l6"))))
+                "1h8qh3170ign8b37m89i2jnnznzkwglv1kg63s3v1pp3lf3b9sf2"))))
     (build-system gnu-build-system)
     (arguments
-     `(#:tests? #f                      ; No tests exist.
-       #:make-flags (list ,(string-append "CC=" (cc-for-target))
-                          (string-append "PREFIX="
-                                         (assoc-ref %outputs "out")))
-       #:phases
-       (modify-phases %standard-phases
-         (delete 'bootstrap)
-         (delete 'configure))))
+     (list #:tests? #f                      ; No tests exist.
+           #:make-flags #~(list (string-append "CC=" #$(cc-for-target))
+                                (string-append "PREFIX=" #$output))
+           #:phases
+           #~(modify-phases %standard-phases
+               (delete 'bootstrap)
+               (delete 'configure))))
     (home-page "https://github.com/linux-can/can-utils")
     (synopsis "CAN utilities")
     (description "This package provides CAN utilities in the following areas:
@@ -3842,16 +3899,16 @@ communication over HTTP.")
 (define-public restinio
   (package
     (name "restinio")
-    (version "0.7.2")
+    (version "0.7.7")
     (source (origin
               (method git-fetch)
               (uri (git-reference
                     (url "https://github.com/Stiffstream/restinio")
-                    (commit (string-append "v." version))))
+                    (commit (string-append "v" version))))
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "03ajv1d034z6sjf2xapy8zq1mq2xkz5dqvn51vz2p26ws5axbzrn"))))
+                "0nzkh9kxk6mz570w4pygmfnyila5mkxcgzifi73wshd4yp7q3f3d"))))
     (build-system cmake-build-system)
     (arguments
      (list
@@ -3870,7 +3927,6 @@ communication over HTTP.")
               (chdir "dev"))))))
     (native-inputs
      (list catch2-3
-           expected-lite
            json-dto))
     (inputs
      (list openssl
@@ -3878,6 +3934,7 @@ communication over HTTP.")
     (propagated-inputs
      ;; These are all #include'd by restinio's .hpp header files.
      (list asio
+           expected-lite
            fmt
            llhttp
            pcre
@@ -3890,55 +3947,19 @@ HTTP/Websocket server.  It is based on standalone version of ASIO
 and targeted primarily for asynchronous processing of HTTP-requests.")
     (license license:bsd-3)))
 
-(define-public restinio-0.6
-  (package
-    (inherit restinio)
-    (name "restinio")
-    (version "0.6.19")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://github.com/Stiffstream/restinio")
-                    (commit (string-append "v." version))))
-              (file-name (git-file-name name version))
-              (sha256
-               (base32
-                "1qrb1qr075r5059w984c4slgpsiwv94j6fmi9naa5l48dbi1p7jz"))))
-    (arguments
-     (list
-      #:configure-flags #~(list "-DRESTINIO_FIND_DEPS=ON"
-                                "-DRESTINIO_INSTALL=ON"
-                                "-DRESTINIO_TEST=ON"
-                                "-DRESTINIO_USE_EXTERNAL_HTTP_PARSER=ON"
-                                "-DRESTINIO_USE_EXTERNAL_SOBJECTIZER=ON")
-      #:phases
-      #~(modify-phases %standard-phases
-          (add-after 'unpack 'change-directory
-            (lambda _
-              (chdir "dev"))))))
-    (native-inputs (list catch2 clara json-dto))
-    ;; These are all #include'd by restinio's .hpp header files.
-    (propagated-inputs
-     (modify-inputs (package-propagated-inputs restinio)
-       (replace "llhttp" http-parser)))))
-
 (define-public opendht
-  ;; Temporarily use the latest commit, as the latest release lacks a 'detach'
-  ;; procedure used by a recent DhtNet, required by Jami.
-  (let ((commit "318d02c55a7061a771a632ff2224b0d195a80d42")
-        (revision "0"))
     (package
       (name "opendht")
-      (version (git-version "3.1.11" revision commit))
+      (version "3.4.0")
       (source (origin
                 (method git-fetch)
                 (uri (git-reference
                       (url "https://github.com/savoirfairelinux/opendht")
-                      (commit commit)))
+                      (commit (string-append "v" version))))
                 (file-name (git-file-name name version))
                 (sha256
                  (base32
-                  "0d4m9bxvwa1pz8r0sfrjjyml4yp5v7n4vy8ad7k4hcryyvd5npb0"))))
+                  "069y4mgygjsfp5szfbqr7l30g7fbcqqj62h11byyq9k24rl7ilsq"))))
       (outputs '("out" "python" "tools" "debug"))
       (build-system gnu-build-system)
       (arguments
@@ -3989,6 +4010,13 @@ and targeted primarily for asynchronous processing of HTTP-requests.")
                   (("extra_link_args=\\[(.*)\\]" _ args)
                    (string-append "extra_link_args=[" args
                                   ", '-Wl,-rpath=" #$output "/lib']")))))
+            ;; TODO: build with liburing, requires cmake or meson.
+            (add-after 'unpack 'pkgconfig-disable-iouring
+              (lambda _
+                ;; This one causes configure error in dhtnet.
+                (substitute* "opendht.pc.in"
+                  (("@iouring_lib@")
+                   ""))))
             (replace 'check
               (lambda* (#:key tests? #:allow-other-keys)
                 (when tests?
@@ -4018,12 +4046,13 @@ and targeted primarily for asynchronous processing of HTTP-requests.")
              readline))
       (propagated-inputs
        (list msgpack-cxx                  ;included in several installed headers
-             restinio-0.6                 ;included in opendht/http.h
+             restinio                     ;included in opendht/http.h
              ;; The following are listed in the 'Requires.private' field of
              ;; opendht.pc:
              argon2
              gnutls
              jsoncpp
+             llhttp
              nettle
              openssl                      ;required for the DHT proxy
              python))
@@ -4060,12 +4089,12 @@ library (get, put, etc.) with text values.
 @item dhtchat
 A very simple IM client working over the DHT.
 @end table")
-      (license license:gpl3+))))
+      (license license:gpl3+)))
 
 (define-public dhtnet
   ;; There is no tag nor release; use the latest available commit.
-  (let ((revision "3")
-        (commit "77331098ff663a5ac54fae7d0bedafe076c575a1"))
+  (let ((revision "4")
+        (commit "6c5ee3a21556d668d047cdedb5c4b746c3c6bdb2"))
     (package
       (name "dhtnet")
       ;; The base version is taken from the CMakeLists.txt file (see:
@@ -4079,14 +4108,15 @@ A very simple IM client working over the DHT.
                 (file-name (git-file-name name version))
                 (sha256
                  (base32
-                  "1ch736misnlv2aqalj3n62gnz5xlhmip9xfv1aimp0aqinfc94p7"))))
+                  "0np0h19gcibn9d4hyn9vjvlxjc6ma8cg8j1qxh1cam5c9i49h1xv"))))
       (outputs (list "out" "debug"))
       (build-system cmake-build-system)
       (arguments
        (list
         #:configure-flags #~(list "-DBUILD_DEPENDENCIES=OFF"
                                   "-DBUILD_SHARED_LIBS=ON"
-                                  "-DBUILD_TESTING=ON")
+                                  "-DBUILD_TESTING=ON"
+                                  "-DDNC_SYSTEMD=OFF")
         #:phases
         #~(modify-phases %standard-phases
             (add-after 'unpack 'delete-problematic-tests
@@ -4123,7 +4153,7 @@ for interacting with an OpenDHT distributed network.")
 (define-public frrouting
   (package
     (name "frrouting")
-    (version "10.3")
+    (version "10.3.1")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -4132,7 +4162,7 @@ for interacting with an OpenDHT distributed network.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1fv06z506l26jx9gz8dib6zn0rv2yvl7ihvm48d95jjmc7bldw53"))))
+                "1shlxcmvz9ay83wdk2h23yzhqc79hh47v99kq70rymh1d35wr0p7"))))
     (build-system gnu-build-system)
     (inputs
      (list c-ares json-c libcap libxcrypt libyang libelf protobuf-c readline))
@@ -4180,75 +4210,77 @@ powerful route filtering syntax and an easy-to-use configuration interface.")
     (license license:gpl2+)))
 
 (define-public iwd
-  (package
-    (name "iwd")
-    (version "3.8")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://git.kernel.org/pub/scm/network/wireless/iwd.git")
-                    (commit version)))
-              (file-name (git-file-name name version))
-              (sha256
-               (base32
-                "0mvi0xpr99psxjqlq55495x1f3bmalmha13frb3s9ycm5hx9gl84"))))
-    (build-system gnu-build-system)
-    (inputs
-     (list dbus ell (package-source ell) openresolv readline))
-    (native-inputs
-     (list autoconf
-           automake
-           libtool
-           pkg-config
-           python
-           python-docutils
-           openssl))
-    (arguments
-     (list #:configure-flags
-           #~(list "--disable-systemd-service"
-                   "--enable-external-ell"
-                   "--enable-hwsim"
-                   "--enable-tools"
-                   "--enable-wired"
-                   "--localstatedir=/var"
-                   (string-append "--with-dbus-datadir=" #$output "/share/")
-                   (string-append "--with-dbus-busdir="
-                                  #$output "/share/dbus-1/system-services"))
-           #:phases
-           #~(modify-phases %standard-phases
-               (add-after 'unpack 'copy-ell-header-files
-                 ;; Copy into the source tree two of ell's private header files
-                 ;; that it shares with iwd, as is required to build with the
-                 ;; "--enable-external-ell" configure option.  See the
-                 ;; definition of "ell_shared" in iwd's Makefile.am.
-                 (lambda* (#:key inputs #:allow-other-keys)
-                   (let ((ell-header-dir (search-input-directory inputs "/ell"))
-                         (target-dir "ell"))
-                     (mkdir target-dir)
-                     (for-each
-                      (lambda (file-name)
-                        (copy-file (string-append ell-header-dir "/" file-name)
-                                   (string-append target-dir "/" file-name)))
-                      '("asn1-private.h" "useful.h")))))
-               (add-after 'unpack 'patch-resolvconf-path
-                 (lambda* (#:key inputs #:allow-other-keys)
-                   (substitute* "src/resolve.c"
-                     (("getenv\\(\"PATH\"\\)")
-                      (format #f "\"~a\""
-                              (dirname (search-input-file
-                                        inputs "sbin/resolvconf")))))))
-               (add-after 'configure 'patch-Makefile
-                 (lambda _
-                   (substitute* "Makefile"
-                     ;; Don't try to 'mkdir /var'.
-                     (("\\$\\(MKDIR_P\\) -m 700") "true")))))))
-    (home-page "https://iwd.wiki.kernel.org/")
-    (synopsis "iNet Wireless Daemon")
-    (description "iwd is a wireless daemon for Linux that aims to replace WPA
+  (let ((commit "c4718a53553b8c13cbdd713d3783072589dd1620")
+        (revision "1"))
+    (package
+      (name "iwd")
+      (version (git-version "3.8" revision commit))
+      (source (origin
+                (method git-fetch)
+                (uri (git-reference
+                      (url "https://git.kernel.org/pub/scm/network/wireless/iwd.git")
+                      (commit commit)))
+                (file-name (git-file-name name version))
+                (sha256
+                 (base32
+                  "1dqmqr63srgr8y5x2nb07hami7vva1zkg9lh1a1ca2pfspjpa8q3"))))
+      (build-system gnu-build-system)
+      (inputs
+       (list dbus ell (package-source ell) openresolv readline))
+      (native-inputs
+       (list autoconf
+             automake
+             libtool
+             pkg-config
+             python
+             python-docutils
+             openssl))
+      (arguments
+       (list #:configure-flags
+             #~(list "--disable-systemd-service"
+                     "--enable-external-ell"
+                     "--enable-hwsim"
+                     "--enable-tools"
+                     "--enable-wired"
+                     "--localstatedir=/var"
+                     (string-append "--with-dbus-datadir=" #$output "/share/")
+                     (string-append "--with-dbus-busdir="
+                                    #$output "/share/dbus-1/system-services"))
+             #:phases
+             #~(modify-phases %standard-phases
+                 (add-after 'unpack 'copy-ell-header-files
+                   ;; Copy into the source tree two of ell's private header files
+                   ;; that it shares with iwd, as is required to build with the
+                   ;; "--enable-external-ell" configure option.  See the
+                   ;; definition of "ell_shared" in iwd's Makefile.am.
+                   (lambda* (#:key inputs #:allow-other-keys)
+                     (let ((ell-header-dir (search-input-directory inputs "/ell"))
+                           (target-dir "ell"))
+                       (mkdir target-dir)
+                       (for-each
+                        (lambda (file-name)
+                          (copy-file (string-append ell-header-dir "/" file-name)
+                                     (string-append target-dir "/" file-name)))
+                        '("asn1-private.h" "useful.h")))))
+                 (add-after 'unpack 'patch-resolvconf-path
+                   (lambda* (#:key inputs #:allow-other-keys)
+                     (substitute* "src/resolve.c"
+                       (("getenv\\(\"PATH\"\\)")
+                        (format #f "\"~a\""
+                                (dirname (search-input-file
+                                          inputs "sbin/resolvconf")))))))
+                 (add-after 'configure 'patch-Makefile
+                   (lambda _
+                     (substitute* "Makefile"
+                       ;; Don't try to 'mkdir /var'.
+                       (("\\$\\(MKDIR_P\\) -m 700") "true")))))))
+      (home-page "https://iwd.wiki.kernel.org/")
+      (synopsis "iNet Wireless Daemon")
+      (description "iwd is a wireless daemon for Linux that aims to replace WPA
 Supplicant.  It optimizes resource utilization by not depending on any external
 libraries and instead utilizing features provided by the Linux kernel to the
 maximum extent possible.")
-    (license license:lgpl2.1+)))
+      (license license:lgpl2.1+))))
 
 (define-public iwgtk
   (package
@@ -4501,7 +4533,7 @@ network.  This must be enabled on the target host, usually in the BIOS.")
 (define-public traceroute
   (package
     (name "traceroute")
-    (version "2.1.5")
+    (version "2.1.6")
     (source
      (origin
        (method url-fetch)
@@ -4509,7 +4541,7 @@ network.  This must be enabled on the target host, usually in the BIOS.")
                            "traceroute-" version "/traceroute-"
                            version ".tar.gz"))
        (sha256
-        (base32 "17l5barragw0mfgsbjfndny3w4l7zs20l6s6rvim3azajq6jcv4w"))))
+        (base32 "0pnvp7fcgkhg58ilnp2j9dk83274s3mpjgzrzgvqzafpp76zkklw"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -4691,7 +4723,7 @@ network.")
 (define-public ngtcp2
   (package
     (name "ngtcp2")
-    (version "1.12.0")
+    (version "1.13.0")
     (source
      (origin
        (method url-fetch)
@@ -4699,7 +4731,7 @@ network.")
                            "releases/download/v" version "/"
                            "ngtcp2-" version ".tar.gz"))
        (sha256
-        (base32 "047glkg71rikj7s46jb9aaipqn13arzz0pvph5kg66f0pz4zb2n0"))))
+        (base32 "1sik0rlpar1dk46ahssv59ik1w360v97hydzari77m8khfjscxd1"))))
     (build-system gnu-build-system)
     (arguments
      (list

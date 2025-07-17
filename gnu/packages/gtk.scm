@@ -1277,6 +1277,37 @@ application suites.")
                         (substitute* "testsuite/css/parser/meson.build"
                           ((".*color-mix.*") "")))
                      #~())
+              ;; libEGL warning: DRI3 error: Could not get DRI3 device
+              ;; libEGL warning: Activate DRI3 at Xorg or build mesa with DRI2
+              ;; JIT session error: No HI20 PCREL relocation type be found for
+              ;; LO12 PCREL relocation type
+              #$@(if (target-riscv64?)
+                     #~((substitute* "testsuite/gsk/meson.build"
+                          (("'border-colorstates',") "")
+                          (("'glyph-cache-overflow-slices',") "")
+                          (("'huge-height-nogl',") "")
+                          (("'huge-width-nogl',") "")
+                          (("'mipmap-generation-later',") "")
+                          (("'shadow-texture-formats',") "")
+                          (("'texture-offscreen-mipmap-nogl',") "")
+                          (("'texture-scale-filters-nocairo',") ""))
+                        (substitute* "testsuite/reftests/meson.build"
+                          ((".*center-center-300.*00.ui.*") "")
+                          ((".*center-center-300.*00-overlay.ui.*") "")
+                          ((".*icon-shadow-no-transform.ui.*") "")
+                          ((".*image-load-from-file.ui.*") ""))
+                        (substitute* "testsuite/css/parser/meson.build"
+                          ((".*color-mix.*") "")))
+                     #~())
+              ;; libEGL warning: DRI3 error: Could not get DRI3 device
+              ;; libEGL warning: Activate DRI3 at Xorg or build mesa with DRI2
+              #$@(if (target-ppc64le?)
+                     #~((substitute* "testsuite/gsk/meson.build"
+                          (("'border-zero-width-color',") ""))
+                        (substitute* "testsuite/css/parser/meson.build"
+                          ((".*at-valid-17.*") "")
+                          ((".*color-mix.*") "")))
+                     #~())
               ;; XXX: These failures appear specific to i686 – investigate them.
               #$@(if (target-x86-32?)
                      #~((substitute* "testsuite/gsk/meson.build"

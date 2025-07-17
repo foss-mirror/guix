@@ -301,14 +301,14 @@ Accounting.")
 (define-public homebank
   (package
     (name "homebank")
-    (version "5.9")
+    (version "5.9.2")
     (source (origin
               (method url-fetch)
               (uri (string-append "https://www.gethomebank.org/public/sources"
                                   "/homebank-" version ".tar.gz"))
               (sha256
                (base32
-                "1riizq0l9k0ml5lgsrg740f0zycpdy8lf7z8w79zk5p1p5ms74nb"))))
+                "1iqvzb3a27z6zcmv7rxvrzc11g2ciwsbskbandvxrf4lvjpqfxgb"))))
     (build-system glib-or-gtk-build-system)
     (native-inputs
      (list pkg-config intltool))
@@ -320,6 +320,8 @@ Accounting.")
 home.  The seeks to be lightweight, simple and easy to use.  It brings
 features that allow you to analyze your finances in a detailed way instantly
 and dynamically with report tools based on filtering and graphical charts.")
+    (properties
+     '((release-monitoring-url . "https://www.gethomebank.org/en/downloads.php")))
     (license license:gpl2+)))
 
 (define-public ledger
@@ -2213,6 +2215,16 @@ software Beancount with a focus on features and usability.")
          "01ivxgv1g0pkr0xi43366pghc3j3mmhk5bshis6kkn04bq04cx7f"))
        (file-name (git-file-name name version))))
     (build-system emacs-build-system)
+    (arguments
+     (list #:test-command #~(list "make" "test")
+           #:phases
+           #~(modify-phases %standard-phases
+               (add-after 'unpack 'adjust-available-beancount-options
+                 (lambda _
+                   (substitute* "beancount.el"
+                     (("\"account_unrealized_gains\"") "")))))))
+    (native-inputs
+     (list beancount))
     (home-page "https://github.com/beancount/beancount-mode")
     (synopsis "Emacs mode for Beancount")
     (description
@@ -2345,7 +2357,7 @@ interactive controls.  This package provides a GTK+ graphical user interface
 (define-public python-ta-lib
   (package
     (name "python-ta-lib")
-    (version "0.6.3")
+    (version "0.6.4")
     (source
      (origin
        ;; Git repo contains Make rules to regenerate precompiled files
@@ -2355,7 +2367,7 @@ interactive controls.  This package provides a GTK+ graphical user interface
              (commit (string-append "TA_Lib-" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1qf00rnsn3s38yxqym1q4bdh98yykik5jdw492gn5ymddr499n1f"))))
+        (base32 "12qzk7naflcmlm7shsnxl4hg6cc0xh4937p0jv8y89c3fgx71cv8"))))
     (build-system pyproject-build-system)
     (arguments
      (list
@@ -2444,7 +2456,7 @@ and manipulation.")
 (define-public xmrig
   (package
     (name "xmrig")
-    (version "6.22.0")
+    (version "6.22.2")
     (source
      (origin
        (method git-fetch)
@@ -2452,7 +2464,7 @@ and manipulation.")
              (url "https://github.com/xmrig/xmrig")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
-       (sha256 (base32 "1h3qcs176xbfs1k2silr5rf13y0nag6qgsaz14qi3nrxxc0d8n4h"))
+       (sha256 (base32 "0dis9v8xykiqqzcib22djgmzyvx71akjs25aqvxjjzl1n8cm4npz"))
        (modules '((guix build utils)))
        (snippet
         ;; TODO: Try to use system libraries instead of bundled ones in

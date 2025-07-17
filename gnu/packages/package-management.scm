@@ -59,6 +59,7 @@
   #:use-module (gnu packages build-tools)
   #:use-module (gnu packages check)
   #:use-module (gnu packages compression)
+  #:use-module (gnu packages containers)
   #:use-module (gnu packages cmake)
   #:use-module (gnu packages cpio)
   #:use-module (gnu packages cpp)
@@ -109,7 +110,8 @@
   #:use-module (gnu packages python-check)
   #:use-module (gnu packages python-web)
   #:use-module (gnu packages python-xyz)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
+  #:use-module (gnu packages ruby-xyz)
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages sqlite)
   #:use-module (gnu packages ssh)
@@ -143,7 +145,7 @@
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix packages)
   #:use-module (guix utils)
-  #:use-module ((guix search-paths) #:select ($SSL_CERT_DIR $SSL_CERT_FILE))
+  #:use-module ((guix search-paths) #:select ($SSL_CERT_DIR $SSL_CERT_FILE $GUIX_EXTENSIONS_PATH))
   #:use-module (ice-9 match)
   #:use-module (srfi srfi-1))
 
@@ -180,8 +182,8 @@
   ;; Note: the 'update-guix-package.scm' script expects this definition to
   ;; start precisely like this.
   (let ((version "1.4.0")
-        (commit "096dedd0bb13523002c814b001429c2f65b6f10d")
-        (revision 37))
+        (commit "826e305fde3687573a7e1449ce91e82836696ce6")
+        (revision 41))
     (package
       (name "guix")
 
@@ -197,7 +199,7 @@
                       (commit commit)))
                 (sha256
                  (base32
-                  "1gm88mgcgpfaibzwy426szb7fvlz6zh17csjbqlz8lcjdz0a1wjx"))
+                  "17j1gq50pni96vxs45swf3awxgfscfyapfra0szjwji56cyfmhf5"))
                 (file-name (string-append "guix-" version "-checkout"))))
       (build-system gnu-build-system)
       (arguments
@@ -512,6 +514,9 @@ $(prefix)/etc/openrc\n")))
 
          ;; Some of the tests use "unshare" when it is available.
          ("util-linux" ,util-linux)
+         ,@(if (target-linux?)
+               `(("slirp4netns" ,slirp4netns))
+               '())
 
          ;; Many tests rely on the 'guile-bootstrap' package, which is why we
          ;; have it here.
@@ -802,6 +807,48 @@ with the @command{module} command commonly found on @acronym{HPC,
 high-performance computing} clusters.")
     (license license:gpl3+)))
 
+(define-public guix-xsearch
+  (package
+    (name "guix-xsearch")
+    (version "2.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://codeberg.org/Baleine/guix-xsearch.git")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1rx1984841jv6y4wkhlfgdjylfffl6zl07scl1l7wgm5kmaqc6br"))))
+    (build-system guile-build-system)
+    (arguments
+     (list
+      #:source-directory "src"
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'build 'add-extension-to-search-path
+            (lambda _
+              (with-directory-excursion #$output
+                (mkdir-p "share/guix/extensions")
+                (symlink (string-append #$output
+                          "/share/guile/site/3.0/guix/extensions/xsearch.scm")
+                         "share/guix/extensions/xsearch.scm")))))))
+    ;; Avoid setting guix as propagated so that we use the user’s profile.
+    (native-inputs (list guile-3.0
+                         guile-xapian
+                         guix))
+    (propagated-inputs (list guile-xapian))
+    ;; This is very important since we want the extension to be available
+    ;; without having to add a vanilla guix to the current profile.
+    (native-search-paths
+     (list $GUIX_EXTENSIONS_PATH))
+    (home-page "https://codeberg.org/Baleine/guix-xsearch")
+    (synopsis "Extension for Guix to provide faster search using Xapian")
+    (description
+     "The Guix Xsearch extension is a new implementation of Guix search sped up
+by using a Xapian cache.")
+    (license (list license:gpl3+ license:cc0))))
+
 
 ;;;
 ;;; Other tools.
@@ -998,19 +1045,19 @@ transactions from C or Python.")
     (license license:gpl2+)))
 
 (define-public bffe
-  (let ((commit "ec2cae0a12cb578a88846cde1980ea98e352b1db")
-        (revision "13"))
+  (let ((commit "2f9b1cb355e9a276903a721b48c77790841a91d6")
+        (revision "15"))
     (package
       (name "bffe")
       (version (git-version "0" revision commit))
       (source (origin
                 (method git-fetch)
                 (uri (git-reference
-                      (url "https://git.cbaines.net/git/guix/bffe")
+                      (url "https://codeberg.org/guix/bffe.git")
                       (commit commit)))
                 (sha256
                  (base32
-                  "0ifhf3hrwxr479lz5wk7n3mw9rzrwmj7is65daj26g24wjlxbick"))
+                  "0h1nzlj6k9yhhsc1an72876p19yf8kszs2h7xww5ldcjs8vwxn9c"))
                 (file-name (string-append name "-" version "-checkout"))))
       (build-system gnu-build-system)
       (native-inputs
@@ -1041,7 +1088,7 @@ transactions from C or Python.")
              guile-pfds
              guile-prometheus
              guile-lib))
-      (home-page "https://git.cbaines.net/guix/bffe")
+      (home-page "https://codeberg.org/guix/bffe.git")
       (synopsis "Build Farm Front-end for Guix")
       (description
        "The BFFE of Build Farm Front-end is an experimental frontend for Guix
@@ -1599,8 +1646,8 @@ environments.")
                   "0k9zkdyyzir3fvlbcfcqy17k28b51i20rpbjwlx2i1mwd2pw9cxc")))))))
 
 (define-public guix-build-coordinator
-  (let ((commit "7e347870d56eec532662909eceb3bc79ae7fff1d")
-        (revision "130"))
+  (let ((commit "89e6de99c4ff29c1ac36077ca2f263b47539f8cf")
+        (revision "131"))
     (package
       (name "guix-build-coordinator")
       (version (git-version "0" revision commit))
@@ -1611,7 +1658,7 @@ environments.")
                       (commit commit)))
                 (sha256
                  (base32
-                  "05drlw3sxq83fxphq569wf0kzn3fhzw11zrc8njxxr88ksvfi04y"))
+                  "1ffa3bhg4nzif4gk26gydnw4jvm1gfidh3b6r1i36kydy3ms19fw"))
                 (file-name (string-append name "-" version "-checkout"))))
       (build-system gnu-build-system)
       (arguments
@@ -1854,8 +1901,8 @@ in an isolated environment, in separate namespaces.")
     (license license:gpl3+)))
 
 (define-public nar-herder
-  (let ((commit "586982fc7e9591351dffe1a234fa088a889d97fb")
-        (revision "40"))
+  (let ((commit "8bfd36fe774aff71f9a33fd99e42d578a823750d")
+        (revision "41"))
     (package
       (name "nar-herder")
       (version (git-version "0" revision commit))
@@ -1866,7 +1913,7 @@ in an isolated environment, in separate namespaces.")
                       (commit commit)))
                 (sha256
                  (base32
-                  "1sbjkh475dxphnm9v1s3mm3zi6q97n3j4p1khjcf3qvikw494sq7"))
+                  "0wd8nj2ji28jvs4wgshhbipxballpfmmwbxx82nk4bypbdpdwd5a"))
                 (file-name (string-append name "-" version "-checkout"))))
       (build-system gnu-build-system)
       (arguments
@@ -2096,7 +2143,6 @@ the boot loader configuration.")
         (base32 "0ajbz8ms4h5nyjr59hv9z8vaimj4f3p51v8idmy14qnbmmjwa2nb"))
        (patches
         (search-patches "flatpak-fix-fonts-icons.patch"
-                        "flatpak-fix-path.patch"
                         "flatpak-fix-icon-validation.patch"
                         "flatpak-unset-gdk-pixbuf-for-sandbox.patch"))))
     (build-system meson-build-system)
@@ -2214,6 +2260,21 @@ cp -r /tmp/locale/*/en_US.*")))
                              libarchive
                              libseccomp
                              libxau))
+    (native-search-paths
+     (list ;; Flatpak creates desktop files on its own.
+           ;; If those desktop files contain DBusActivatable=true, the application
+           ;; will be invoked by using dbus activation.  But dbus activation
+           ;; doesn't use $PATH but rather does execve while the working directory
+           ;; is "/".  That means, if the Exec entry contains just "flatpak",
+           ;; that won't be ever found.
+           ;; When flatpak creates desktop files, it uses a path from
+           ;; $FLATPAK_BINARY if set.
+           ;; See <https://codeberg.org/guix/guix/issues/438>.
+           (search-path-specification
+            (variable "FLATPAK_BINARY")
+            (separator #f)
+            (files '("bin/flatpak"))
+            (file-type 'regular))))
     (home-page "https://flatpak.org")
     (synopsis "System for building, distributing, and running sandboxed desktop
 applications")
@@ -2224,7 +2285,7 @@ sandboxed desktop applications on GNU/Linux.")
 (define-public fpm
   (package
     (name "fpm")
-    (version "1.15.1")
+    (version "1.16.0")
     (source (origin
               (method git-fetch)        ;for tests
               (uri (git-reference
@@ -2233,8 +2294,7 @@ sandboxed desktop applications on GNU/Linux.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1m2zxf7wyk7psvm611yxs68hnwm0pyqilsmcq3x791hz7rvbg68w"))
-              (patches (search-patches "fpm-newer-clamp-fix.patch"))))
+                "0h4yw57y0p0x335767y058lbv46f6xjf3jvv49vxw5vfzzhqbl3c"))))
     (build-system ruby-build-system)
     (arguments
      (list #:phases
@@ -2460,14 +2520,14 @@ to specific versions of applications.")
     (name "gnome-packagekit")
     (version "43.0")
     (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                     (url "https://gitlab.gnome.org/GNOME/gnome-packagekit.git")
-                     (commit version)))
-              (file-name (git-file-name name version))
+              (method url-fetch)
+              (uri
+               (string-append "mirror://gnome/sources/" name "/"
+                              (version-major version) "/"
+                              name "-" version ".tar.xz"))
               (sha256
                (base32
-                "1fnspk8wfh3v663qpqq3m1fgp21nskgisidihx41wgcsbzbvp1a5"))))
+                "15giqmk8w375kkyzmwzfc9xnyafqzp86ncbh5zmb48x9aak5b96d"))))
     (build-system meson-build-system)
     (arguments
      (list #:configure-flags
@@ -2481,13 +2541,14 @@ to specific versions of applications.")
                (add-before 'install 'setenv
                  (lambda _
                    ;; Prevent gtk-update-icon-cache, glib-compile-schemas,
-                   ;; update-desktop-database
-                   ;; (since we are doing it ourselves with a profile hook).
-                   (setenv "DESTDIR" "/"))))))
+                   ;; update-desktop-database (since we are doing it ourselves with
+                   ;; glib-or-gtk phases).
+                   (setenv "DESTDIR" "/"))))
+           #:glib-or-gtk? #t))
     (native-inputs
-     (list gnu-gettext pkg-config (list glib "bin") xorg-server-for-tests))
+     (list gettext-minimal pkg-config (list glib "bin") xorg-server-for-tests))
     (inputs
-     (list glib gtk+ packagekit polkit))
+     (list glib gtk+ packagekit))
     (synopsis "GNOME frontend for PackageKit")
     (description "This package provides a PackageKit frontend for GNOME.
 PackageKit is a common unified interface for package managers.")

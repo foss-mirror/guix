@@ -5,7 +5,7 @@
 ;;; Copyright © 2014, 2015, 2016, 2017, 2018, 2019, 2020 Mark H Weaver <mhw@netris.org>
 ;;; Copyright © 2015 Federico Beffa <beffa@fbengineering.ch>
 ;;; Copyright © 2015 Taylan Ulrich Bayırlı/Kammer <taylanbayirli@gmail.com>
-;;; Copyright © 2015-2018, 2020, 2022-2024 Efraim Flashner <efraim@flashner.co.il>
+;;; Copyright © 2015-2018, 2020, 2022-2025 Efraim Flashner <efraim@flashner.co.il>
 ;;; Copyright © 2016 Christine Lemmer-Webber <cwebber@dustycloud.org>
 ;;; Copyright © 2016–2022 Tobias Geerinckx-Rice <me@tobias.gr>
 ;;; Copyright © 2016, 2017 Alex Kost <alezost@gmail.com>
@@ -38,7 +38,7 @@
 ;;; Copyright © 2019 Stefan Stefanović <stefanx2ovic@gmail.com>
 ;;; Copyright © 2019-2022 Brice Waegeneire <brice@waegenei.re>
 ;;; Copyright © 2019 Kei Kebreau <kkebreau@posteo.net>
-;;; Copyright © 2020, 2021 Oleg Pykhalov <go.wigust@gmail.com>
+;;; Copyright © 2020, 2021, 2025 Oleg Pykhalov <go.wigust@gmail.com>
 ;;; Copyright © 2020 Pierre Neidhardt <mail@ambrevar.xyz>
 ;;; Copyright © 2020 Chris Marusich <cmmarusich@gmail.com>
 ;;; Copyright © 2020 Vincent Legoll <vincent.legoll@gmail.com>
@@ -81,7 +81,7 @@
 ;;; Copyright © 2024 Gabriel Wicki <gabriel@erlikon.ch>
 ;;; Copyright © 2024 Sharlatan Hellseher <sharlatanus@gmail.com>
 ;;; Copyright © 2024 Arun Isaac <arunisaac@systemreboot.net>
-;;; Copyright © 2024 Ashish SHUKLA <ashish.is@lostca.se>
+;;; Copyright © 2024, 2025 Ashish SHUKLA <ashish.is@lostca.se>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -145,6 +145,7 @@
   #:use-module (gnu packages graphviz)
   #:use-module (gnu packages gstreamer)
   #:use-module (gnu packages gtk)
+  #:use-module (gnu packages guile)
   #:use-module (gnu packages haskell-apps)
   #:use-module (gnu packages haskell-xyz)
   #:use-module (gnu packages image)
@@ -513,17 +514,32 @@ corresponding UPSTREAM-SOURCE (an origin), using the given DEBLOB-SCRIPTS."
 ;; The current "stable" kernels. That is, the most recently released major
 ;; versions that are still supported upstream.
 
-(define-public linux-libre-6.14-version "6.14.8")
+(define-public linux-libre-6.15-version "6.15.5")
+(define-public linux-libre-6.15-gnu-revision "gnu")
+(define deblob-scripts-6.15
+  (linux-libre-deblob-scripts
+   linux-libre-6.15-version
+   linux-libre-6.15-gnu-revision
+   (base32 "0v0fsw3av42xbayy3g11cxyin3hda8s3b103sin05yc80r16584b")
+   (base32 "05153ci3sk9gsq8vgk6phvzszldaj2psmyp10cjivm3gl6qvkbhk")))
+(define-public linux-libre-6.15-pristine-source
+  (let ((version linux-libre-6.15-version)
+        (hash (base32 "1dc8qrwvvy34s5lgm43j295ipwaqm8wd8x4qchr14hqlkj9hg9rc")))
+   (make-linux-libre-source version
+                            (%upstream-linux-source version hash)
+                            deblob-scripts-6.15)))
+
+(define-public linux-libre-6.14-version "6.14.11")
 (define-public linux-libre-6.14-gnu-revision "gnu")
 (define deblob-scripts-6.14
   (linux-libre-deblob-scripts
    linux-libre-6.14-version
    linux-libre-6.14-gnu-revision
-   (base32 "00b6axy07ykdxk4qy3dnx5mvhz2dvbf78qxax3zq81bg11wbfvay")
-   (base32 "076x15yp1qjhvv81si3aj3n6ny4l6yl1rcj7f7l12rlbl9p64vl2")))
+   (base32 "1c27l734pwxgdwhq0gzibaznh0695pqvl17vbddw6q5znm84a0s3")
+   (base32 "14vabccax7mq5gisshlnx2ljx3hr4jj106aw3s9qx5dxbjvr7qcw")))
 (define-public linux-libre-6.14-pristine-source
   (let ((version linux-libre-6.14-version)
-        (hash (base32 "0199maj3mk577wwaszbi0cl5a0afx1ynad896bmmg8vm636jxcb2")))
+        (hash (base32 "06rvydmc2yfspidnsay5hin3i8p4fxy3bvzwnry7gjf9dl5cs71z")))
    (make-linux-libre-source version
                             (%upstream-linux-source version hash)
                             deblob-scripts-6.14)))
@@ -532,67 +548,67 @@ corresponding UPSTREAM-SOURCE (an origin), using the given DEBLOB-SCRIPTS."
 ;; Here are the support timelines:
 ;; <https://www.kernel.org/category/releases.html>
 
-(define-public linux-libre-6.12-version "6.12.30")
+(define-public linux-libre-6.12-version "6.12.36")
 (define-public linux-libre-6.12-gnu-revision "gnu")
 (define deblob-scripts-6.12
   (linux-libre-deblob-scripts
    linux-libre-6.12-version
    linux-libre-6.12-gnu-revision
-   (base32 "0zqw2hw9f9vssqvizc0nlnp9m54a2inxg23gsf1wixhgc79wdhsi")
-   (base32 "1sqgg46xnjvk1dcz7j2f5fys43d7b5m3s4fj2hx3wrvd982n14k6")))
+   (base32 "0y6i9ifax1a8bxih3rr9xzy3mj61ssgx9yfsy6fh94mni6wl51gp")
+   (base32 "0g08l17f57wkh2jfj4n2k7f7ikm87aj55npljvwd1lns7v5p90xr")))
 (define-public linux-libre-6.12-pristine-source
   (let ((version linux-libre-6.12-version)
-        (hash (base32 "0bpqkh64bj6nslbb43hj28lxmrxinrapwgh05q5wwh0yjx46l16z")))
+        (hash (base32 "135s057ya63zw4v1jr9lzjdxk60ahr9v38hbv6nima755pnql5ja")))
    (make-linux-libre-source version
                             (%upstream-linux-source version hash)
                             deblob-scripts-6.12)))
 
-(define-public linux-libre-6.6-version "6.6.92")
+(define-public linux-libre-6.6-version "6.6.96")
 (define-public linux-libre-6.6-gnu-revision "gnu")
 (define deblob-scripts-6.6
   (linux-libre-deblob-scripts
    linux-libre-6.6-version
    linux-libre-6.6-gnu-revision
    (base32 "1fph0cf5vwkxcyz2cay4d70sqw1y02dx3shfclhp9y4nmkk169pq")
-   (base32 "0qi8hhgl9sk0q56qxaiabwpsw5m3dnxf4sga0yj2lhbnapl60pjj")))
+   (base32 "1zzpk2hpv76lylip4j7jkn0jqcjj15h3jff22x22i73mwz2kiqgk")))
 (define-public linux-libre-6.6-pristine-source
   (let ((version linux-libre-6.6-version)
-        (hash (base32 "1v1pq9yzxrlaxx4y4cj5q3wska0jbv2inc7phqfw70fj88kai0hx")))
+        (hash (base32 "1p8v49w7z8w3wc68mbw46cz9xqrllc8cpa7nqlm2xnrssi1mir4y")))
    (make-linux-libre-source version
                             (%upstream-linux-source version hash)
                             deblob-scripts-6.6)))
 
-(define-public linux-libre-6.1-version "6.1.140")
+(define-public linux-libre-6.1-version "6.1.143")
 (define-public linux-libre-6.1-gnu-revision "gnu")
 (define deblob-scripts-6.1
   (linux-libre-deblob-scripts
    linux-libre-6.1-version
    linux-libre-6.1-gnu-revision
    (base32 "00yh14z7sr9pkakkkpdyp8fj41d56a306xsf5yb2lzm0sgl6lvza")
-   (base32 "0kz3z4jjag5xjn5scp72is0f6ql550z6xixydc370qmvp8aswxix")))
+   (base32 "1hzjr44hy8px4n3x5my2syhd60chkfy79ajgzvlz04pc5yf6ihpi")))
 (define-public linux-libre-6.1-pristine-source
   (let ((version linux-libre-6.1-version)
-        (hash (base32 "0x7b856hxmli8qnkps9x62q8sca101v4sfwjqgivzxvprb5gjyap")))
+        (hash (base32 "02ivq22hv42bcnssfpkkbqlhz1by9jrfrqlrz1wi0svysz2dlnz2")))
    (make-linux-libre-source version
                             (%upstream-linux-source version hash)
                             deblob-scripts-6.1)))
 
-(define-public linux-libre-5.15-version "5.15.184")
+(define-public linux-libre-5.15-version "5.15.186")
 (define-public linux-libre-5.15-gnu-revision "gnu")
 (define deblob-scripts-5.15
   (linux-libre-deblob-scripts
    linux-libre-5.15-version
    linux-libre-5.15-gnu-revision
    (base32 "14dajb391lr4y2llvjihilmzwvrq4gjbgvrha7dvh6vv4jmbi28v")
-   (base32 "117nsj3n6nvlzbl86linz327qk5p516s9a8sc6ci79qwwz6a60im")))
+   (base32 "0rg65s6kd9gxxa3wl6180pr39rb6zbcicwjik4kygs2ns0247y56")))
 (define-public linux-libre-5.15-pristine-source
   (let ((version linux-libre-5.15-version)
-        (hash (base32 "1nf1v89ikwi9philrw6h03hzb085mwz44lfxx71agp67vk39hglw")))
+        (hash (base32 "0anbf7v0m26da0c6d0z925im4x2kf8kswpbv056543amxvbzsklw")))
    (make-linux-libre-source version
                             (%upstream-linux-source version hash)
                             deblob-scripts-5.15)))
 
-(define-public linux-libre-5.10-version "5.10.237")
+(define-public linux-libre-5.10-version "5.10.239")
 (define-public linux-libre-5.10-gnu-revision "gnu1")
 (define deblob-scripts-5.10
   (linux-libre-deblob-scripts
@@ -602,12 +618,12 @@ corresponding UPSTREAM-SOURCE (an origin), using the given DEBLOB-SCRIPTS."
    (base32 "11liynz5vayms646gj0rjj8fmrqhv203mwsqs3sx9p8y84v50d4p")))
 (define-public linux-libre-5.10-pristine-source
   (let ((version linux-libre-5.10-version)
-        (hash (base32 "098gvqfaahabqqz64m5fwri57drwiz3006pr805sxw74w0vjgj0z")))
+        (hash (base32 "1nzhl1y6avfl77fyqwjwy3qc6679gp92k0d3aarscrdydcml5yid")))
    (make-linux-libre-source version
                             (%upstream-linux-source version hash)
                             deblob-scripts-5.10)))
 
-(define-public linux-libre-5.4-version "5.4.293")
+(define-public linux-libre-5.4-version "5.4.295")
 (define-public linux-libre-5.4-gnu-revision "gnu1")
 (define deblob-scripts-5.4
   (linux-libre-deblob-scripts
@@ -617,7 +633,7 @@ corresponding UPSTREAM-SOURCE (an origin), using the given DEBLOB-SCRIPTS."
    (base32 "0l7pwhgw9laxfypcpqlz411x3hybcw2269abh3lpcw96bgv5m1k2")))
 (define-public linux-libre-5.4-pristine-source
   (let ((version linux-libre-5.4-version)
-        (hash (base32 "0b9p8l6ndm75751f7s03rnxg7yg9c4pj9rb537lhsv6pqx096n1l")))
+        (hash (base32 "1adn0pbk8y1zp1yrz83ch6h4wypm2qvbnx4xig3sls2nfgvmi0f4")))
    (make-linux-libre-source version
                             (%upstream-linux-source version hash)
                             deblob-scripts-5.4)))
@@ -649,6 +665,11 @@ corresponding UPSTREAM-SOURCE (an origin), using the given DEBLOB-SCRIPTS."
     (inherit source)
     (patches (append (origin-patches source)
                      patches))))
+
+(define-public linux-libre-6.15-source
+  (source-with-patches linux-libre-6.15-pristine-source
+                       (list %boot-logo-patch
+                             %linux-libre-arm-export-__sync_icache_dcache-patch)))
 
 (define-public linux-libre-6.14-source
   (source-with-patches linux-libre-6.14-pristine-source
@@ -776,6 +797,11 @@ corresponding UPSTREAM-SOURCE (an origin), using the given DEBLOB-SCRIPTS."
     (description "Headers of the Linux-Libre kernel.")
     (license license:gpl2)))
 
+(define-public linux-libre-headers-6.15
+  (make-linux-libre-headers* linux-libre-6.15-version
+                             linux-libre-6.15-gnu-revision
+                             linux-libre-6.15-source))
+
 (define-public linux-libre-headers-6.14
   (make-linux-libre-headers* linux-libre-6.14-version
                              linux-libre-6.14-gnu-revision
@@ -826,7 +852,7 @@ corresponding UPSTREAM-SOURCE (an origin), using the given DEBLOB-SCRIPTS."
 ;; linux-libre-headers-latest points to the latest headers package
 ;; and should be used as a dependency for packages that depend on
 ;; the headers.
-(define-public linux-libre-headers-latest linux-libre-headers-6.14)
+(define-public linux-libre-headers-latest linux-libre-headers-6.15)
 
 
 ;;;
@@ -1153,6 +1179,14 @@ Linux kernel.  It has been modified to remove all non-free binary blobs.")
 ;;; Generic kernel packages.
 ;;;
 
+(define-public linux-libre-6.15
+  (make-linux-libre* linux-libre-6.15-version
+                     linux-libre-6.15-gnu-revision
+                     linux-libre-6.15-source
+                     '("x86_64-linux" "i686-linux" "armhf-linux"
+                       "aarch64-linux" "powerpc64le-linux" "riscv64-linux")
+                     #:configuration-file kernel-config))
+
 (define-public linux-libre-6.14
   (make-linux-libre* linux-libre-6.14-version
                      linux-libre-6.14-gnu-revision
@@ -1161,11 +1195,11 @@ Linux kernel.  It has been modified to remove all non-free binary blobs.")
                        "aarch64-linux" "powerpc64le-linux" "riscv64-linux")
                      #:configuration-file kernel-config))
 
-(define-public linux-libre-version         linux-libre-6.14-version)
-(define-public linux-libre-gnu-revision    linux-libre-6.14-gnu-revision)
-(define-public linux-libre-pristine-source linux-libre-6.14-pristine-source)
-(define-public linux-libre-source          linux-libre-6.14-source)
-(define-public linux-libre                 linux-libre-6.14)
+(define-public linux-libre-version         linux-libre-6.15-version)
+(define-public linux-libre-gnu-revision    linux-libre-6.15-gnu-revision)
+(define-public linux-libre-pristine-source linux-libre-6.15-pristine-source)
+(define-public linux-libre-source          linux-libre-6.15-source)
+(define-public linux-libre                 linux-libre-6.15)
 
 (define-public linux-libre-6.12
   (make-linux-libre* linux-libre-6.12-version
@@ -1229,6 +1263,25 @@ Linux kernel.  It has been modified to remove all non-free binary blobs.")
 ;;;
 ;;; Specialized kernel variants.
 ;;;
+
+(define-public %dummy-linux-kernel-for-container
+  (hidden-package
+   (package
+     (name "linux-dummy")
+     (version "0.0.0")
+     (source #f)
+     (build-system copy-build-system)
+     (arguments
+      (list #:phases
+            #~(modify-phases %standard-phases
+                (delete 'unpack)
+                (replace 'install
+                  (lambda _
+                    (mkdir-p #$output))))))
+     (home-page "")
+     (synopsis "Dummy Linux kernel for @command{guix system container}")
+     (description "")
+     (license #f))))
 
 (define-public linux-libre-arm-generic
   (make-linux-libre* linux-libre-version
@@ -1434,6 +1487,9 @@ Linux kernel.  It has been modified to remove all non-free binary blobs.")
                         ("CONFIG_CRYPTO_USER_API_RNG" . #true)
                         ("CONFIG_CRYPTO_USER_API_AEAD" . #true)
 
+                        ;; Fixes https://codeberg.org/guix/guix/issues/101
+                        ("CONFIG_KEY_DH_OPERATIONS" . #true)
+
                         ;; For connecting to ci.guix.gnu.org over VPN.
                         ("CONFIG_WIREGUARD" . m)
 
@@ -1512,7 +1568,14 @@ Linux kernel.  It has been modified to remove all non-free binary blobs.")
   ;; https://mntre.com/reform.html
   (let ((base (make-linux-libre* linux-libre-6.12-version
                                  linux-libre-6.12-gnu-revision
-                                 linux-libre-6.12-source
+                                 (source-with-patches linux-libre-6.12-source
+                                                      ;; Revert upstream patches
+                                                      ;; that conflict with
+                                                      ;; MNT/Reform patches
+                                                      (search-patches
+                                                       "linux-libre-arm64-mnt-reform-revert-vop2-display-modes.patch"
+                                                       "linux-libre-arm64-mnt-reform-revert-phy-rockchip-samsung.patch"
+                                                       "linux-libre-arm64-mnt-reform-revert-rk-samsung-hdptx.patch"))
                                  '("aarch64-linux")
                                  #:extra-version "arm64-mnt-reform"
                                  #:extra-options
@@ -1598,6 +1661,12 @@ Linux kernel.  It has been modified to remove all non-free binary blobs.")
                                            ("CONFIG_VIDEO_ROCKCHIP_VDEC2" . m)
                                            ("CONFIG_ROCKCHIP_DW_HDMI_QP" . #true)
                                            ("CONFIG_ROCKCHIP_DW_MIPI_DSI" . #true)
+                                           ;; Fixes https://codeberg.org/guix/guix/issues/101
+                                           ("CONFIG_CRYPTO_USER_API_HASH" . #true)
+                                           ("CONFIG_CRYPTO_USER_API_SKCIPHER" . #true)
+                                           ("CONFIG_CRYPTO_USER_API_RNG" . #true)
+                                           ("CONFIG_CRYPTO_USER_API_AEAD" . #true)
+                                           ("CONFIG_KEY_DH_OPERATIONS" . #true)
                                            ;; Provide support for ath9k wireless
                                            ("CONFIG_ATH9K" . m)
                                            ("CONFIG_ATH9K_HTC" . m))
@@ -2003,7 +2072,7 @@ and the notification, WiFi, and Bluetooth LED.")
 (define-public tuxedo-keyboard
   (package
     (name "tuxedo-keyboard")
-    (version "4.12.2")
+    (version "4.14.2")
     (source
      (origin
        (method git-fetch)
@@ -2012,7 +2081,7 @@ and the notification, WiFi, and Bluetooth LED.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0h5hjwlphld1ijin08qi1hrpsczpw8dqyw49yjprl959j74nwnmm"))))
+        (base32 "0b7qivyd8r58cq84q11b2z919px5p9k5zbinm6ahj07w0lsq2j7b"))))
     (build-system linux-module-build-system)
     (arguments
      (list #:tests? #f))                ; no test suite
@@ -2283,20 +2352,20 @@ supported under @file{/sys/class/backlight/}.")
 (define-public v4l2loopback-linux-module
   (package
     (name "v4l2loopback-linux-module")
-    (version "0.14.0")
+    (version "0.15.0")
     (source (origin
               (method git-fetch)
               (uri (git-reference
-                    (url "https://github.com/umlaeute/v4l2loopback")
+                    (url "https://github.com/v4l2loopback/v4l2loopback")
                     (commit (string-append "v" version))))
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0vrf0mndzcpypz5a48kyjqwvvfh17wgganzml4vwiqhl4whq2a8v"))))
+                "1vp7f3ssvlbsxrwx6ix890yk589na6zhi0z3p1yl00fa813wcidh"))))
     (build-system linux-module-build-system)
     (arguments
      (list #:tests? #f))                ; no test suite
-    (home-page "https://github.com/umlaeute/v4l2loopback")
+    (home-page "https://github.com/v4l2loopback/v4l2loopback")
     (synopsis "Linux kernel module to create virtual V4L2 video devices")
     (description
      "This Linux module creates virtual video devices.  @acronym{V4L2, Video
@@ -3687,10 +3756,36 @@ Both commands are targeted at system administrators.")
     (synopsis
      "Programs to configure Linux IP packet filtering rules (nftables API)")))
 
+(define-public irqbalance
+  (package
+    (name "irqbalance")
+    (version "1.9.4")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/irqbalance/irqbalance")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1jswxr0jcxz83j1nanl6xaxpw001l0hfb2xvvy2k970g1g1kpszd"))))
+    (build-system gnu-build-system)
+    (inputs (list glib ncurses libnl libcap-ng))
+    (native-inputs (list autoconf automake libtool pkg-config))
+    (home-page "https://irqbalance.github.io/irqbalance/")
+    (synopsis "Daemon used to load balance CPU interrupts")
+    (description
+     "Irqbalance is a daemon to help balance the CPU load generated by
+interrupts across all of a systems CPUs.  Irqbalance identifies the highest
+volume interrupt sources, and isolates each of them to a single unique CPU, so
+that load is spread as much as possible over an entire processor set, while
+minimizing cache miss rates for irq handlers.")
+    (license license:gpl2)))
+
 (define-public bolt
   (package
     (name "bolt")
-    (version "0.9.5")
+    (version "0.9.8")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -3699,7 +3794,7 @@ Both commands are targeted at system administrators.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1b9z0sfrz6bj0mddng9s0dx59g9239zmrl03hxx2x88mb7r0wmcg"))))
+                "1i9nyvx3qcf4m607qmpklpl9xqzsh423k8y3fr6c5n0k4ajy4cxh"))))
     (build-system meson-build-system)
     (arguments
      (list #:configure-flags '(list "--localstatedir=/var")
@@ -3708,12 +3803,11 @@ Both commands are targeted at system administrators.")
                         (add-after 'unpack 'replace-directories
                           (lambda* (#:key outputs #:allow-other-keys)
                             (substitute* "meson.build"
-                              (("udev.get_pkgconfig_variable..udevdir..")
-                               (string-append "'"
-                                              #$output "/lib/udev'")))
-                            (substitute* "scripts/meson-install.sh"
-                              (("mkdir.*")
-                               ""))))
+                              (("udev.get_variable\\(pkgconfig: 'udevdir'\\)")
+                               (string-append "'" #$output "/lib/udev'"))
+                              ;; Don't install in /var
+                              (("not systemd\\.found\\(\\)")
+                               "false"))))
                         (add-before 'install 'no-polkit-magic
                           (lambda* (#:key outputs #:allow-other-keys)
                             (setenv "PKEXEC_UID" "something"))))))
@@ -3735,6 +3829,7 @@ The command-line utility @command{boltctl} manages Thunderbolt devices via
 @command{boltd}.  It can list devices, monitor changes, and initiate
 authorization of devices.")
     (home-page "https://gitlab.freedesktop.org/bolt/bolt")
+    (properties `((lint-hidden-cpe-vendors . ("boltcms" "puppet"))))
     (license license:gpl2+)))
 
 (define-public jitterentropy-rngd
@@ -6759,7 +6854,7 @@ and copy/paste text in the console and in xterm.")
 (define-public btrfs-progs
   (package
     (name "btrfs-progs")
-    (version "6.14")
+    (version "6.15")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://kernel.org/linux/kernel/"
@@ -6767,7 +6862,7 @@ and copy/paste text in the console and in xterm.")
                                   version ".tar.xz"))
               (sha256
                (base32
-                "189xgsgdzqqcwm7k1ga33cj107md07w630xd88f2jvmkzh2bhnnz"))))
+                "1fvlyv78g65y6dv2vrgp1rj7ikkqav8cmwgchf6xi7qrsa6l5njp"))))
     (build-system gnu-build-system)
     (outputs '("out" "static")) ;static versions of the binaries in "out"
     (arguments
@@ -8227,50 +8322,47 @@ under OpenGL graphics workloads.")
     (license license:gpl3)))
 
 (define-public efivar
-  ;; XXX: 15622b7e5761f3dde3f0e42081380b2b41639a48 fixes compilation on i686.
-  ;; ca48d3964d26f5e3b38d73655f19b1836b16bd2d fixes cross-compilation.
-  (let ((commit "ca48d3964d26f5e3b38d73655f19b1836b16bd2d")
-        (revision "0"))
-    (package
-      (name "efivar")
-      (version (git-version "38" revision commit))
-      (source (origin
-                (method git-fetch)
-                (uri (git-reference
-                      (url "https://github.com/rhboot/efivar")
-                      (commit commit)))
-                (file-name (git-file-name name version))
-                (sha256
-                 (base32
-                  "0zsab3hcv1v53cxwkvsk09ifnwhs48a6xa3kxlwvs87yxswspvi8"))))
-      (build-system gnu-build-system)
-      (arguments
-       (list
-        ;; Tests require a UEFI system and is not detected in the chroot.
-        #:tests? #f
-        #:make-flags #~(list (string-append "prefix="
-                                            #$output)
-                             (string-append "libdir="
-                                            #$output "/lib")
-                             (string-append "CC="
-                                            #$(cc-for-target)) "HOSTCC=gcc"
-                             (string-append "LDFLAGS=-Wl,-rpath="
-                                            #$output "/lib"))
-        #:phases #~(modify-phases %standard-phases
-                     (add-after 'unpack 'build-deterministically
-                       (lambda _
-                         (substitute* "src/include/defaults.mk"
-                           ;; Don't use -march=native.
-                           (("-march=native")
-                            ""))))
-                     (delete 'configure))))
-      (native-inputs (list mandoc pkg-config))
-      (inputs (list popt))
-      (home-page "https://github.com/rhboot/efivar")
-      (synopsis "Tool and library to manipulate EFI variables")
-      (description "This package provides a library and a command line
+  (package
+    (name "efivar")
+    (version "39")
+    (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://github.com/rhboot/efivar")
+                    (commit version)))
+              (file-name (git-file-name name version))
+              (sha256
+               (base32
+                "1zd9dghg1z2rrsazv3d9rj7nik6kdqz42jiak65pipz7mpjn9zdk"))
+              (patches (search-patches "efivar-fix-fprint-format.patch"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      ;; Tests require a UEFI system and is not detected in the chroot.
+      #:tests? #f
+      #:make-flags #~(list (string-append "prefix="
+                                          #$output)
+                           (string-append "libdir="
+                                          #$output "/lib")
+                           (string-append "CC="
+                                          #$(cc-for-target)) "HOSTCC=gcc"
+                                          (string-append "LDFLAGS=-Wl,-rpath="
+                                                         #$output "/lib"))
+      #:phases #~(modify-phases %standard-phases
+                   (add-after 'unpack 'build-deterministically
+                     (lambda _
+                       (substitute* "src/include/defaults.mk"
+                         ;; Don't use -march=native.
+                         (("-march=native")
+                          ""))))
+                   (delete 'configure))))
+    (native-inputs (list mandoc pkg-config))
+    (inputs (list popt))
+    (home-page "https://github.com/rhboot/efivar")
+    (synopsis "Tool and library to manipulate EFI variables")
+    (description "This package provides a library and a command line
 interface to the variable facility of UEFI boot firmware.")
-      (license license:lgpl2.1+))))
+    (license license:lgpl2.1+)))
 
 (define-public efibootmgr
   (package
@@ -8503,11 +8595,11 @@ interface in sysfs, which can be accomplished with the included udev rules.")
     (native-inputs
      (list shellcheck))
     (inputs
-     `(("bash" ,bash)
-       ("dbus" ,dbus)
+     `(("dbus" ,dbus)
        ("ethtool" ,ethtool)
        ("eudev" ,eudev)
        ("grep" ,grep)
+       ("guile" ,guile-3.0) ;for wrap-script
        ("hdparm" ,hdparm)
        ("inetutils" ,inetutils)
        ("iw" ,iw)
@@ -8565,15 +8657,20 @@ interface in sysfs, which can be accomplished with the included udev rules.")
             (lambda* (#:key inputs outputs #:allow-other-keys)
               (let* ((bin (string-append (assoc-ref outputs "out") "/bin"))
                      (sbin (string-append (assoc-ref outputs "out") "/sbin"))
-                     (bin-files (find-files bin ".*"))
-                     (sbin-files (find-files sbin ".*")))
+                     ;; Used to ignore symlinks which don't need wrapping
+                     (regular-file-predicate
+                      (lambda (file stat) (eq? 'regular (stat:type stat))))
+                     (bin-files (find-files bin regular-file-predicate))
+                     (sbin-files (find-files sbin regular-file-predicate)))
                 (define (bin-directory input-name)
                   (let ((p (assoc-ref inputs input-name)))
                     (and p (string-append p "/bin"))))
                 (define (sbin-directory input-name)
                   (string-append (assoc-ref inputs input-name) "/sbin"))
                 (for-each (lambda (program)
-                            (wrap-program program
+                            ;; Programs rely on $0 so we use wrap-script
+                            ;; instead of wrap-program
+                            (wrap-script program
                               `("PATH" ":" prefix
                                 ,(append
                                   (filter-map bin-directory
@@ -9756,7 +9853,7 @@ framebuffer dump file (copy) to a PNG image.")
 (define-public libcgroup
   (package
     (name "libcgroup")
-    (version "3.1.0")
+    (version "3.2.0")
     (home-page "https://github.com/libcgroup/libcgroup")
     (source
      (origin
@@ -9765,7 +9862,7 @@ framebuffer dump file (copy) to a PNG image.")
              "https://github.com/libcgroup/libcgroup/releases/download/v"
              version "/" name "-" version ".tar.gz"))
        (sha256
-        (base32 "0n0jkvmagw14vgwx3j5b6vv5h25lasrg2a7xihq9h11ww2qw8vlp"))))
+        (base32 "1zmxhqp8kj2n7yvj82nsy5sx07yrxj4r37w41lz5q8bpqgbc43ws"))))
     (build-system gnu-build-system)
     (arguments
      ;; Tests are virtualized with lxc, it is not very feasible
@@ -10049,7 +10146,12 @@ configuration files.  It supports data files in ASCII, MBCS and Unicode.")
            (lambda* (#:key make-flags #:allow-other-keys)
              (apply invoke "make" "install-dev" make-flags))))))
     (native-inputs
-     `(("gettext" ,gettext-minimal)))
+     ;; riscv64 needs >= gcc-13.3.0 for liburcu.
+     (append
+       (if (target-riscv64?)
+           (list gcc-14)
+           '())
+       (list gettext-minimal)))
     (inputs
      `(("libinih" ,libinih)
        ("liburcu" ,liburcu)
@@ -10442,7 +10544,7 @@ found in custom keyboard firmware like QMK.")
 (define-public pipewire
   (package
     (name "pipewire")
-    (version "1.4.0")
+    (version "1.4.5")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -10451,7 +10553,7 @@ found in custom keyboard firmware like QMK.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "00c9irz566lmg51wxq5ywpvql6svvjxk9zjqx61xkvsnhz1526f6"))))
+                "1k3b412zspmx2v0finb5g8kns8xsynlnz48cmlcg7ch62av6kw75"))))
     (build-system meson-build-system)
     (arguments
      (list
@@ -10508,7 +10610,7 @@ of Linux application development.")
 (define-public wireplumber
   (package
     (name "wireplumber")
-    (version "0.5.8")
+    (version "0.5.10")
     (source
      (origin
        (method git-fetch)
@@ -10518,7 +10620,7 @@ of Linux application development.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0g6gv7apwyc74z4rfhcdgdgwidda7cy4znwjjq39q4jh24dg70j4"))))
+        (base32 "0z4k6vn1zcqa5878mrcsin79b74ckvrzlprfxi730aa55w5xb609"))))
     (build-system meson-build-system)
     (arguments
      `(#:configure-flags '("-Dsystemd=disabled"
@@ -11513,6 +11615,20 @@ work properly.")
     (supported-systems
      (filter (cut string-suffix? "-linux" <>) %supported-systems))
     (license license:gpl2+)))
+
+(define-public firejail-disable-sandbox-check
+  (package/inherit
+   firejail
+   (name "firejail-disable-sandbox-check")
+   (arguments
+    (substitute-keyword-arguments (package-arguments firejail)
+      ((#:configure-flags flags #~'())
+       #~(append #$flags
+                 (list "--disable-sandbox-check")))))
+   (description
+    (string-append (package-description firejail)
+                   "  Builded with @code{--disable-sandbox-check}, which is
+ only intended for development."))))
 
 (define-public edac-utils
   (package

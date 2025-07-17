@@ -1,5 +1,5 @@
 # GNU Guix --- Functional package management for GNU
-# Copyright © 2012-2024 Ludovic Courtès <ludo@gnu.org>
+# Copyright © 2012-2025 Ludovic Courtès <ludo@gnu.org>
 # Copyright © 2013 Andreas Enge <andreas@enge.fr>
 # Copyright © 2015, 2017 Alex Kost <alezost@gmail.com>
 # Copyright © 2016, 2018 Mathieu Lirzin <mthl@gnu.org>
@@ -20,6 +20,7 @@
 # Copyright © 2023 Clément Lassieur <clement@lassieur.org>
 # Copyright © 2023, 2024 Wilko Meyer <w@wmeyer.eu>
 # Copyright © 2024 gemmaro <gemmaro.dev@gmail.com>
+# Copyright © 2025 Brice Waegeneire <brice@waegenei.re>
 #
 # This file is part of GNU Guix.
 #
@@ -48,7 +49,7 @@ do_subst = $(SED)					\
   -e 's,[@]abs_top_builddir[@],$(abs_top_builddir),g'	\
   -e 's,[@]localedir[@],$(localedir),g'
 
-scripts/guix: scripts/guix.in Makefile
+scripts/guix: scripts/guix.in Makefile guile$(EXEEXT)
 	$(AM_V_at)rm -f $@ $@-t
 	$(AM_V_at)$(MKDIR_P) "$(@D)"
 	$(AM_V_GEN)$(do_subst) < "$(srcdir)/$@.in" > "$@-t"
@@ -171,6 +172,7 @@ MODULES =					\
   guix/build-system/haskell.scm		\
   guix/build-system/julia.scm			\
   guix/build-system/linux-module.scm		\
+  guix/build-system/luanti.scm		\
   guix/build-system/maven.scm			\
   guix/build-system/meson.scm			\
   guix/build-system/minetest.scm		\
@@ -237,6 +239,7 @@ MODULES =					\
   guix/build/gnu-build-system.scm		\
   guix/build/gnu-dist.scm			\
   guix/build/guile-build-system.scm		\
+  guix/build/luanti-build-system.scm		\
   guix/build/maven-build-system.scm		\
   guix/build/minetest-build-system.scm		\
   guix/build/mix-build-system.scm		\
@@ -309,7 +312,9 @@ MODULES =					\
   guix/import/json.scm				\
   guix/import/kde.scm				\
   guix/import/launchpad.scm   			\
+  guix/import/luanti.scm   			\
   guix/import/minetest.scm   			\
+  guix/import/nuget.scm   			\
   guix/import/npm-binary.scm			\
   guix/import/opam.scm				\
   guix/import/print.scm				\
@@ -364,6 +369,7 @@ MODULES =					\
   guix/scripts/import/hackage.scm		\
   guix/scripts/import/hexpm.scm			\
   guix/scripts/import/json.scm  		\
+  guix/scripts/import/luanti.scm  		\
   guix/scripts/import/minetest.scm  		\
   guix/scripts/import/npm-binary.scm		\
   guix/scripts/import/opam.scm			\
@@ -438,10 +444,14 @@ dist_noinst_DATA =				\
 AUX_FILES =						\
   gnu/packages/aux-files/chromium/master-preferences.json		\
   gnu/packages/aux-files/emacs/comp-integrity.el		\
-  gnu/packages/aux-files/emacs/comp-integrity-next.el		\
   gnu/packages/aux-files/emacs/guix-emacs.el		\
   gnu/packages/aux-files/findclass.php			\
   gnu/packages/aux-files/guix.vim			\
+  gnu/packages/aux-files/linux-libre/6.15-arm.conf	\
+  gnu/packages/aux-files/linux-libre/6.15-arm64.conf	\
+  gnu/packages/aux-files/linux-libre/6.15-i686.conf	\
+  gnu/packages/aux-files/linux-libre/6.15-riscv.conf	\
+  gnu/packages/aux-files/linux-libre/6.15-x86_64.conf	\
   gnu/packages/aux-files/linux-libre/6.14-arm.conf	\
   gnu/packages/aux-files/linux-libre/6.14-arm64.conf	\
   gnu/packages/aux-files/linux-libre/6.14-i686.conf	\
@@ -573,9 +583,9 @@ SCM_TESTS =					\
   tests/inferior.scm				\
   tests/ipfs.scm				\
   tests/lint.scm				\
+  tests/luanti.scm				\
   tests/machine/hetzner.scm                     \
   tests/machine/hetzner/http.scm                 \
-  tests/minetest.scm				\
   tests/modules.scm				\
   tests/monads.scm				\
   tests/nar.scm				\
@@ -747,6 +757,7 @@ EXTRA_DIST +=						\
   build-aux/compile-as-derivation.scm			\
   build-aux/config.rpath				\
   build-aux/convert-xref.scm				\
+  build-aux/extract-syscall-ranges.sh			\
   build-aux/generate-authors.scm			\
   build-aux/git-version-gen				\
   build-aux/mdate-from-git.scm				\
@@ -758,6 +769,7 @@ EXTRA_DIST +=						\
   etc/guix-install.sh					\
   etc/historical-authorizations				\
   etc/news.scm						\
+  etc/teams.scm						\
   etc/manifests/disarchive.scm				\
   etc/manifests/hurd.scm				\
   etc/manifests/kernels.scm				\
@@ -813,7 +825,7 @@ $(1): $(2)
 	$(AM_V_at)echo "Compiling Scheme modules..." ;		\
 	unset GUILE_LOAD_COMPILED_PATH ;			\
 	XDG_CACHE_HOME=/nowhere					\
-	host=$(host) srcdir="$(top_srcdir)"			\
+	host="$(4)" srcdir="$(top_srcdir)"			\
 	$(top_builddir)/pre-inst-env				\
 	$(GUILE) -L "$(top_builddir)" -L "$(top_srcdir)"	\
 	  --no-auto-compile					\
@@ -859,36 +871,36 @@ MODULES_PO        := guix/build/po.scm
 
 $(eval $(call guile-compilation-rule,make-core-go,	\
   $(MODULES_CORE) guix/config.scm $(dist_noinst_DATA),	\
-  0))
+  0,$(host)))
 .PHONY: make-core-go
 
 $(eval $(call guile-compilation-rule,make-packages1-go,	\
   $(MODULES_PACKAGES1) make-core-go,			\
-  $(words $(MODULES_CORE))))
+  $(words $(MODULES_CORE)),$(host)))
 .PHONY: make-packages1-go
 
 $(eval $(call guile-compilation-rule,make-packages2-go,	\
   $(MODULES_PACKAGES2) make-core-go make-packages1-go,	\
-  $(words $(MODULES_CORE) $(MODULES_PACKAGES1))))
+  $(words $(MODULES_CORE) $(MODULES_PACKAGES1)),$(host)))
 .PHONY: make-packages2-go
 
 $(eval $(call guile-compilation-rule,make-packages3-go,				\
   $(MODULES_PACKAGES3) make-core-go make-packages1-go make-packages2-go,	\
-  $(words $(MODULES_CORE) $(MODULES_PACKAGES1) $(MODULES_PACKAGES2))))
+  $(words $(MODULES_CORE) $(MODULES_PACKAGES1) $(MODULES_PACKAGES2)),$(host)))
 .PHONY: make-packages3-go
 
 $(eval $(call guile-compilation-rule,make-packages4-go,			\
   $(MODULES_PACKAGES4) make-core-go make-packages1-go make-packages2-go	\
     make-packages3-go,							\
   $(words $(MODULES_CORE) $(MODULES_PACKAGES1) $(MODULES_PACKAGES2)	\
-    $(MODULES_PACKAGES3))))
+    $(MODULES_PACKAGES3)),$(host)))
 .PHONY: make-packages4-go
 
 $(eval $(call guile-compilation-rule,make-packages5-go,			\
   $(MODULES_PACKAGES5) make-core-go make-packages1-go make-packages2-go	\
     make-packages3-go make-packages4-go,				\
   $(words $(MODULES_CORE) $(MODULES_PACKAGES1) $(MODULES_PACKAGES2)	\
-    $(MODULES_PACKAGES3) $(MODULES_PACKAGES4))))
+    $(MODULES_PACKAGES3) $(MODULES_PACKAGES4)),$(host)))
 .PHONY: make-packages5-go
 
 make-packages-go: make-packages1-go make-packages2-go \
@@ -897,17 +909,17 @@ make-packages-go: make-packages1-go make-packages2-go \
 
 $(eval $(call guile-compilation-rule,make-system-go,	\
   $(MODULES_SYSTEM) make-packages-go make-core-go,	\
-  $(words $(MODULES_CORE) $(MODULES_PACKAGES))))
+  $(words $(MODULES_CORE) $(MODULES_PACKAGES)),$(host)))
 .PHONY: make-system-go
 
 $(eval $(call guile-compilation-rule,make-cli-go,			\
   $(MODULES_CLI) make-system-go make-packages-go make-core-go,		\
-  $(words $(MODULES_CORE) $(MODULES_PACKAGES) $(MODULES_SYSTEM))))
+  $(words $(MODULES_CORE) $(MODULES_PACKAGES) $(MODULES_SYSTEM)),$(host)))
 .PHONY: make-cli-go
 
 $(eval $(call guile-compilation-rule,guix/build/po.go,			\
   $(MODULES_PO),							\
-  0))
+  0,$(build)))
 
 SUFFIXES = .go
 
@@ -1246,7 +1258,12 @@ cuirass-jobs: $(GOBJECTS)
 .PHONY: update-guix-package update-NEWS cuirass-jobs release
 
 # Git auto-configuration.
-.git/hooks/%: etc/git/%
+.git/hooks/:
+	$(AM_V_at)if test -d .git; then \
+	mkdir "$@"; \
+	fi
+
+.git/hooks/%: etc/git/% | .git/hooks/
 	$(AM_V_at)if test -d .git; then \
 	cp "$<" "$@"; \
 	fi
@@ -1258,7 +1275,7 @@ cuirass-jobs: $(GOBJECTS)
 	fi
 
 COMMIT_MSG_MAGIC = VGhpcyBpcyB0aGUgY29tbWl0LW1zZyBob29rIG9mIEd1aXg=
-.git/hooks/commit-msg: etc/git/commit-msg
+.git/hooks/commit-msg: etc/git/commit-msg | .git/hooks/
 	$(AM_V_at)if test -d .git; then \
 	if test -f $@  && ! grep -qF $(COMMIT_MSG_MAGIC) $@; then \
 	  mkdir -p $@.d && mv $@ $@.d && \
@@ -1280,7 +1297,7 @@ endif
 
 # Downloading up-to-date PO files.
 
-WEBLATE_REPO = https://framagit.org/tyreunom/guix-translations
+WEBLATE_REPO = https://codeberg.org/guix/translations
 
 # Shallow clone the Git repository behind Weblate and copy files from it if
 # they contain at least one translation, and they are well-formed (Scheme
@@ -1320,6 +1337,16 @@ download-po:
 	rm -rf "$$dir"
 .PHONY: download-po
 
+# Regenerate 'CODEOWNERS' when 'teams.scm' is modified so we don't forget.
+if in_git_p
+if !CROSS_COMPILING
+CODEOWNERS: etc/teams.scm scripts/guix
+	./etc/teams.scm codeowners > "$@.tmp"
+	mv "$@.tmp" "$@"
+
+BUILT_SOURCES += CODEOWNERS
+endif
+endif
 ## -------------- ##
 ## Silent rules.  ##
 ## -------------- ##

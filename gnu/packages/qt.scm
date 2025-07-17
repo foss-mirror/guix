@@ -28,13 +28,14 @@
 ;;; Copyright © 2022 Petr Hodina <phodina@protonmail.com>
 ;;; Copyright © 2022 Yash Tiwari <yasht@mailbox.org>
 ;;; Copyright © 2023 Sharlatan Hellseher <sharlatanus@gmail.com>
-;;; Copyright © 2022, 2024 Zheng Junjie <873216071@qq.com>
+;;; Copyright © 2022, 2024, 2025 Zheng Junjie <z572@z572.online>
 ;;; Copyright © 2023 Herman Rimm <herman@rimm.ee>
 ;;; Copyright © 2023 Simon South <simon@simonsouth.net>
 ;;; Copyright © 2024 Foundation Devices, Inc. <hello@foundation.xyz>
 ;;; Copyright © 2024 Josep Bigorra <jjbigorra@gmail.com>
 ;;; Copyright © 2025 John Kehayias <john.kehayias@protonmail.com>
 ;;; Copyright © 2024 Sughosha <sughosha@disroot.org>
+;;; Copyright © 2025 Brice Waegeneire <brice@waegenei.re>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -243,14 +244,14 @@ of C++20 coroutines in connection with certain asynchronous Qt actions.")
 (define-public qt5ct
   (package
     (name "qt5ct")
-    (version "1.8")
+    (version "1.9")
     (source
      (origin
        (method url-fetch)
        (uri
         (string-append "mirror://sourceforge/qt5ct/qt5ct-" version ".tar.bz2"))
        (sha256
-        (base32 "1s88v3x5vxrz981jiqb9cnwak0shz6kgjbkp511i592y85a41dr3"))))
+        (base32 "1zwbb2jgwplbdizcra92q1hnynq13axzwryfh5cr4fs2kn9yc46w"))))
     (build-system qt-build-system)
     (arguments
      (list
@@ -575,6 +576,7 @@ system, and the core design of Django is reused in Grantlee.")
            pkg-config
            python
            vulkan-headers
+           ;; TODO Move to ruby@3 on the next rebuild cycle.
            ruby-2.7))
     (arguments
      `(#:disallowed-references ,(list python)
@@ -1236,6 +1238,34 @@ HostData=lib/qt5"
                             (setenv "QT_QPA_PLATFORM" "offscreen"))))))
     (synopsis "Qt module for 3D")
     (description "The Qt3d module provides classes for displaying 3D.")))
+
+(define-public qt3d
+  (package
+    (name "qt3d")
+    (version "6.5.2")
+    (source (origin
+              (method url-fetch)
+              (uri (qt-url name version))
+              (sha256
+               (base32
+                "047rwawrlm7n0vifxmsqvs3w3j5c16x8qkpx8xazq6xd47dn9w11"))))
+    (propagated-inputs (list))
+    (native-inputs (list perl))
+    (inputs (list mesa qtbase vulkan-headers zlib libxkbcommon))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:configure-flags #~(list "-DQT_BUILD_TESTS=ON")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'check 'set-display
+            (lambda _
+              ;; Make Qt render "offscreen", required for tests.
+              (setenv "QT_QPA_PLATFORM" "offscreen"))))))
+    (synopsis "Qt module for 3D")
+    (description "The Qt3d module provides classes for displaying 3D.")
+    (home-page (package-home-page qtbase))
+    (license (package-license qtbase))))
 
 (define-public qt5compat
   (package
@@ -3344,6 +3374,7 @@ linux/libcurl_wrapper.h")
            pkg-config
            python2-six
            python-2
+           ;; TODO Move to ruby@3 on the next rebuild cycle.
            ruby-2.7))
     (inputs
      (list alsa-lib
@@ -3907,10 +3938,11 @@ system libraries.")
 
 (define-public single-application-qt5
   ;; Change in function signature, nheko requires at least this commit
-  (let ((commit "dc8042b5db58f36e06ba54f16f38b16c5eea9053"))
+  (let ((commit "dc8042b5db58f36e06ba54f16f38b16c5eea9053")
+        (revision "1"))
     (package
       (name "single-application-qt5")
-      (version (string-append "3.2.0-" (string-take commit 7)))
+      (version (git-version "3.2.0" revision commit))
       (source
        (origin
          (method git-fetch)
@@ -3924,28 +3956,25 @@ system libraries.")
            "163aa2x2qb0h8w26si5ql833ilj427jjbdwlz1p2p8iaq6dh0vq1"))))
       (build-system cmake-build-system)
       (arguments
-       `(#:tests? #f                    ; no check target
-         ;; Projects can decide how to build this library.  You might need to
-         ;; override this flag (QApplication, QGuiApplication or
-         ;; QCoreApplication).
-         #:configure-flags '("-DQAPPLICATION_CLASS=QApplication")
-         #:phases
-         (modify-phases %standard-phases
-           ;; No install target, install things manually
-           (replace 'install
-             (lambda* (#:key inputs outputs source #:allow-other-keys)
-               (let* ((qt (assoc-ref inputs "qtbase"))
-                      (qt-version ,(version-major (package-version qtbase-5)))
-                      (out (assoc-ref outputs "out")))
-                 (install-file
-                  "libSingleApplication.a" (string-append out "/lib"))
-                 (for-each
-                  (lambda (file)
-                    (install-file
-                     (string-append source "/" file)
-                     (string-append out "/include")))
-                  '("SingleApplication"
-                    "singleapplication.h" "singleapplication_p.h"))))))))
+       (list
+        #:tests? #f                     ; no check target
+        ;; Projects can decide how to build this library.  You might need to
+        ;; override this flag (QApplication, QGuiApplication or
+        ;; QCoreApplication).
+        #:configure-flags #~(list "-DQAPPLICATION_CLASS=QApplication")
+        #:phases
+        #~(modify-phases %standard-phases
+            ;; No install target, install things manually
+            (replace 'install
+              (lambda* (#:key source #:allow-other-keys)
+                (install-file
+                 "libSingleApplication.a" (string-append #$output "/lib"))
+                (for-each
+                 (lambda (file)
+                   (install-file (string-append source "/" file)
+                                 (string-append #$output "/include")))
+                 '("SingleApplication"
+                   "singleapplication.h" "singleapplication_p.h")))))))
       (inputs
        (list qtbase-5))
       (home-page "https://github.com/itay-grudev/SingleApplication")
@@ -3958,6 +3987,27 @@ instances.  It can (if enabled) spawn secondary (non-related to the primary)
 instances and can send data to the primary instance from secondary
 instances.")
       (license license:expat))))
+
+(define-public single-application
+  (package/inherit single-application-qt5
+    (name "single-application")
+    (version "3.5.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri
+        (git-reference
+         (url "https://github.com/itay-grudev/SingleApplication")
+         (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32
+         "069aww3aww6968hmipzfbj57a5vw6jxj1mr20nsb1yh98n5c01rv"))))
+    (arguments
+     (substitute-keyword-arguments (package-arguments single-application-qt5)
+       ((#:configure-flags flags)
+        #~(cons "-DQT_DEFAULT_MAJOR_VERSION=6" #$flags))))
+    (inputs (list qtbase))))
 
 (define-public pyotherside
   (package
@@ -4073,12 +4123,16 @@ module provides support functions to the automatically generated code.")
     ;; For compatibility with pyqt, we need gpl3.
     (license license:gpl3)))
 
-(define-public python-sip-4
-  (package
-    (inherit python-sip)
-    (name "python-sip")
-    (version "4.19.25")
-    (source
+;; FIXME Remove this package when not needed by qgis anymore
+;; This is a stopgap to build qgis@3.42.1 while waiting for the
+;; qt-team branch to be merged in master with python-pyqt5-sip@12.17.0.
+(define-public python-sip-6.8
+  (hidden-package
+   (package
+     (inherit python-sip)
+     (name "python-sip")
+     (version "6.8.6")
+     (source
       (origin
         (method url-fetch)
         (uri (list (pypi-uri "sip" version)
@@ -4087,33 +4141,64 @@ module provides support functions to the automatically generated code.")
                                   "/sip-" version ".tar.gz")))
         (sha256
          (base32
-          "04a23cgsnx150xq86w1z44b6vr2zyazysy9mqax0fy346zlr77dk"))))
+          "0ykxq0607f2sdwbl5cxbp0y8pl14bsgzc9nhifpxbibfivj5kjbz"))
+        (patches (search-patches "python-sip-include-dirs.patch")))))))
+
+(define-public python-sip-4
+  (package
+    (inherit python-sip)
+    (name "python-sip")
+    (version "4.19.25")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (list (pypi-uri "sip" version)
+                  (string-append "https://www.riverbankcomputing.com/static/"
+                                 "Downloads/sip/"
+                                 version
+                                 "/sip-"
+                                 version
+                                 ".tar.gz")))
+       (sha256
+        (base32 "04a23cgsnx150xq86w1z44b6vr2zyazysy9mqax0fy346zlr77dk"))))
     (build-system gnu-build-system)
-    (native-inputs
-     `(("python" ,python-wrapper)))
+    (native-inputs `(("python" ,python-wrapper)))
     (propagated-inputs `())
     (arguments
-     `(#:tests? #f ; no check target
+     `(#:tests? #f ;no check target
        #:imported-modules ((guix build python-build-system)
                            ,@%default-gnu-imported-modules)
        #:modules ((srfi srfi-1)
-                  ((guix build python-build-system) #:select (python-version))
+                  ((guix build python-build-system)
+                   #:select (python-version))
                   ,@%default-gnu-modules)
-       #:phases
-       (modify-phases %standard-phases
-         (replace 'configure
-           (lambda* (#:key inputs outputs #:allow-other-keys)
-             (let* ((out (assoc-ref outputs "out"))
-                    (bin (string-append out "/bin"))
-                    (include (string-append out "/include"))
-                    (python (assoc-ref inputs "python"))
-                    (lib (string-append out "/lib/python"
-                                        (python-version python)
-                                        "/site-packages")))
-               (invoke "python" "configure.py"
-                       "--bindir" bin
-                       "--destdir" lib
-                       "--incdir" include)))))))
+       #:phases (modify-phases %standard-phases
+                  (add-after 'unpack 'substitute
+                    (lambda _
+                      (substitute* "siplib/siplib.c"
+                        ;; Replaces the internal data-structure usage
+                        ;; that was removed in python 3.11 with the
+                        ;; new official API call so the code will compile
+                        ;; with python > 3.11
+                        (("frame->f_back")
+                         "PyFrame_GetBack(frame)"))))
+                  (replace 'configure
+                    (lambda* (#:key inputs outputs #:allow-other-keys)
+                      (let* ((out (assoc-ref outputs "out"))
+                             (bin (string-append out "/bin"))
+                             (include (string-append out "/include"))
+                             (python (assoc-ref inputs "python"))
+                             (lib (string-append out "/lib/python"
+                                                 (python-version python)
+                                                 "/site-packages")))
+                        (invoke "python"
+                                "configure.py"
+                                "--bindir"
+                                bin
+                                "--destdir"
+                                lib
+                                "--incdir"
+                                include)))))))
     (license license:gpl3)))
 
 (define-public python-pyqt
@@ -4543,6 +4628,16 @@ This package provides the Python bindings.")))
     (synopsis "Union of PyQt and the Qscintilla extension")
     (description
      "This package contains the union of PyQt and the Qscintilla extension.")))
+
+;; FIXME Remove this procedure and its related package when qgis won't need them
+;; anymore
+(define python-sip-6.8-instead-of-python-sip
+  (package-input-rewriting `((,python-sip . ,python-sip-6.8))
+                           #:deep? #t))
+
+(define-public python-pyqt+qscintilla-with-python-sip-6.8
+  (hidden-package
+   (python-sip-6.8-instead-of-python-sip python-pyqt+qscintilla)))
 
 (define-public qtimgui
   (let ((commit "48d64a715b75dee24e398f7e5b0942c2ca329334")
@@ -5076,31 +5171,34 @@ Qt widgets.")
       (license license:lgpl3+))))
 
 (define-public qtcolorwidgets
-  (package
-    (name "qtcolorwidgets")
-    (version "2.2.0")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://gitlab.com/mattia.basaglia/Qt-Color-Widgets")
-                    (commit (string-append "v" version))))
-              (file-name (git-file-name name version))
-              (sha256
-               (base32
-                "1fp7sr5a56bjp2abc6ng331q0bwvk6mf2nxdga81aj6cd9afs22q"))))
-    (build-system cmake-build-system)
-    (arguments '(#:tests? #f))          ;there are no tests
-    (native-inputs
-     (list qttools-5))
-    (inputs
-     (list qtbase-5))
-    (home-page "https://gitlab.com/mattia.basaglia/Qt-Color-Widgets")
-    (synopsis "Color management widgets")
-    (description "QtColorWidgets provides a Qt color dialog that is more
+  (let ((commit "8491078434b24cba295b5e41cc0d2a94c7049a5b")
+        (revision "1"))
+    (package
+      (name "qtcolorwidgets")
+      (version (git-version "2.2.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://gitlab.com/mattbas/Qt-Color-Widgets")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32
+           "1ixb2v5mjdszkxqq51knaj1pcivnihwlj9qlm9pxmvzl9qsvbcgg"))))
+      (build-system cmake-build-system)
+      (arguments
+       (list #:tests? #f ;there are no tests
+             #:configure-flags #~(list "-DQT_VERSION_MAJOR=6")))
+      (native-inputs (list qttools))
+      (inputs (list qtbase))
+      (home-page "https://gitlab.com/mattbas/Qt-Color-Widgets")
+      (synopsis "Color management widgets")
+      (description "QtColorWidgets provides a Qt color dialog that is more
 user-friendly than the default @code{QColorDialog} and several other
 color-related widgets.")
-    ;; Includes a license exception for combining with GPL2 code.
-    (license license:lgpl3+)))
+      ;; Includes a license exception for combining with GPL2 code.
+      (license license:lgpl3+))))
 
 (define-public qcustomplot
   (package
@@ -5713,9 +5811,12 @@ policy applications.")
         (base32
          "0mpkg9iyvzb6mxvhbi6zc052ids2r2nzpmjbljgpq6a2hja13vyr"))))
     (build-system qt-build-system)
-    (inputs (list qtbase-5))
     (arguments
-     (list #:configure-flags #~(list "-DKDSoap_TESTS=true")
+     (list #:qtbase qtbase
+           #:configure-flags
+           #~(list "-DKDSoap_TESTS=true"
+                   ;; remove when next version release.
+                   "-DKDSoap_QT6=true")
            #:phases
            #~(modify-phases %standard-phases
                (replace 'check
@@ -5731,14 +5832,7 @@ web server.")
     (license (list license:gpl2 license:gpl3))))
 
 (define-public kdsoap-qt6
-  (package
-    (inherit kdsoap)
-    (name "kdsoap-qt6")
-    (arguments (substitute-keyword-arguments (package-arguments kdsoap)
-                 ((#:configure-flags flags #~(list))
-                  #~(cons "-DKDSoap_QT6=true" #$flags))))
-    (inputs (modify-inputs (package-inputs kdsoap)
-              (replace "qtbase" qtbase)))))
+  (deprecated-package "kdsoap-qt6" kdsoap))
 
 (define-public libaccounts-qt
   (package
@@ -5839,16 +5933,16 @@ GLib applications.")
 (define-public packagekit-qt5
   (package
     (name "packagekit-qt5")
-    (version "1.1.1")
+    (version "1.1.2")
     (source (origin
               (method git-fetch)
               (uri (git-reference
-                    (url "https://github.com/hughsie/PackageKit-Qt")
+                    (url "https://github.com/PackageKit/PackageKit-Qt")
                     (commit (string-append "v" version))))
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0bajp6lxc9gdn7sy7rs7hwkhx854k5kqr3w9v07mv9l6vwnwq057"))))
+                "1nx8xfhz9v4pc0mz1ir0pq47skpc3w3yj8wqa4m5yky87ib5xcxc"))))
     (build-system cmake-build-system)
     (arguments '(#:tests? #f))          ;no test suite
     (native-inputs (list pkg-config))
@@ -5888,13 +5982,12 @@ a secure way.")))
                (base32
                 "0k6saz5spys4a4p6ws0ayrjks2gqdqvz7zfmlhdpz5axha0gbqq4"))))
     (build-system qt-build-system)
-    (native-inputs (list doxygen pkg-config qtbase-5 qttools-5))
+    (native-inputs (list doxygen pkg-config qttools-5))
     (inputs (list dbus glib libaccounts-glib))
     (arguments
      (list #:tests? #f                  ; Figure out how to run tests
            #:phases
            #~(modify-phases %standard-phases
-               (delete 'validate-runpath)
                (replace 'configure
                  (lambda _
                    (substitute* "src/signond/signond.pro"
@@ -5913,7 +6006,9 @@ a secure way.")))
                                      #$output "/lib/signon")))
                    (invoke "qmake"
                            (string-append "PREFIX=" #$output)
-                           (string-append "LIBDIR=" #$output "/lib")))))))
+                           (string-append "LIBDIR=" #$output "/lib")
+                           (string-append "QMAKE_LFLAGS_RPATH=-Wl,-rpath,"
+                                          #$output "/lib -Wl,-rpath,")))))))
     (home-page "https://accounts-sso.gitlab.io/signond/index.html")
     (synopsis "Perform user authentication over D-Bus")
     (description "This package provides a D-Bus service which performs user
@@ -5938,7 +6033,6 @@ authentication on behalf of its clients.")
                  (base32
                   "13cgdf6hhi2z3c8sax79dwi7450n8h228kpyl2w5lx0xglb2savq"))))
       (native-inputs (modify-inputs (package-native-inputs signond)
-                       (delete "qtbase")
                        (replace "qttools" qttools)))
       (arguments
        (substitute-keyword-arguments (package-arguments signond)

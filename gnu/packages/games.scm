@@ -91,6 +91,9 @@
 ;;; Copyright © 2023-2025 Adam Faiz <adam.faiz@disroot.org>
 ;;; Copyright © 2025 Andrew Wong <wongandj@icloud.com>
 ;;; Copyright © 2025 Nigko Yerden <nigko.yerden@gmail.com>
+;;; Copyright © 2025 Adrien 'neox' Bourmault <neox@gnu.org>
+;;; Copyright © 2025 Ada Stevenson <adanskana@gmail.com>
+;;; Copyright © 2025 Gabriel Santos <gabrielsantosdesouza@disroot.org>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -189,6 +192,7 @@
   #:use-module (gnu packages linux)
   #:use-module (gnu packages lisp)
   #:use-module (gnu packages llvm)
+  #:use-module (gnu packages logging)
   #:use-module (gnu packages lua)
   #:use-module (gnu packages man)
   #:use-module (gnu packages maths)
@@ -217,7 +221,7 @@
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages qt)
   #:use-module (gnu packages readline)
-  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-check)
   #:use-module (gnu packages shells)
   #:use-module (gnu packages sdl)
   #:use-module (gnu packages serialization)
@@ -2760,7 +2764,7 @@ Every puzzle has a complete solution, although there may be more than one.")
 (define-public dsda-doom
   (package
     (name "dsda-doom")
-    (version "0.28.2")
+    (version "0.29.0")
     (source
      (origin
        (method git-fetch)
@@ -2769,7 +2773,7 @@ Every puzzle has a complete solution, although there may be more than one.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1qvxx4r3ahiy8w9x0559g581971ycmbqm1kszzc65w1aa85f5q2f"))))
+        (base32 "1aki559nz1czlvzah1rdmpdcad4mswpp5gszfwxhil9x0hc3gj4r"))))
     (build-system cmake-build-system)
     (arguments
      (list
@@ -2791,18 +2795,11 @@ Every puzzle has a complete solution, although there may be more than one.")
     (home-page "https://github.com/kraflab/dsda-doom")
     (synopsis "Doom source port, successor of PrBoom+")
     (description
-     "This is a successor of PrBoom+ with new features, including:
-@enumerate
-@item Heretic, Hexen, MBF21, Doom-in-Hexen, UDMF, and MAPINFO support
-@item In-game console and scripting
-@item Full controller support
-@item Palette-based opengl renderer
-@item Debugging features for testing
-@item Strict mode for speedrunning
-@item Various quality of life improvements
-@item Advanced tools for TASing
-@item Rewind
-@end enumerate")
+     "DSDA-Doom is a Doom source port and successor of PrBoom+, with extra
+features for demo recording/playback and quality of life.  In particular, its
+features include support for the Heretic, Hexen, MBF21, Doom-in-Hexen and UDMF
+map formats, MAPINFO support, full controller support, debug and scripting
+features, rewinding, and a strict mode for speedrunning.")
     (license license:gpl2+)))
 
 (define-public prboom-plus
@@ -3919,56 +3916,57 @@ fight Morgoth, the Lord of Darkness.")
     (license license:gpl2)))
 
 (define-public pingus
-  (package
-    (name "pingus")
-    (version "0.7.6")
-    (source
-     (origin
-       (method git-fetch)
-       (uri (git-reference
-              (url "https://gitlab.com/pingus/pingus.git")
-              (commit (string-append "v" version))))
-       (file-name (git-file-name name version))
-       (sha256
-        (base32
-         "0wp06kcmknsnxz7bjnsndb8x062z7r23fb3yrnbfnj68qhz18y74"))
-       (patches (search-patches "pingus-boost-headers.patch"
-                                "pingus-sdl-libs-config.patch"))
-       (modules '((guix build utils)))
-       (snippet
-        '(begin
-           (substitute* "src/pingus/screens/demo_session.cpp"
-             (("#include <iostream>")
-              ;; std::function moved to <functional> with C++ 11.
-              ;; Remove this for versions newer than 0.7.6.
-              "#include <iostream>\n#include <functional>"))
-           #t))))
-    (build-system gnu-build-system)
-    (native-inputs (list pkg-config scons-python2))
-    (inputs (list sdl
-                  sdl-image
-                  sdl-mixer
-                  mesa
-                  glu
-                  libpng
-                  boost))
-    (arguments
-     '(#:make-flags (list (string-append "PREFIX=" %output))
-       #:tests? #f                      ; no check target
-       #:phases
-       (modify-phases %standard-phases
-         (delete 'configure)))) ; no configure script
-    (home-page "https://pingus.seul.org/")
-    (synopsis "Lemmings clone")
-    (description
-     "Pingus is a free Lemmings-like puzzle game in which the player takes
+  ;; XXX: Does not release anymore.
+  (let ((commit "8c68e08b0b9530b0078a6e2972786f7accf0d0e6")
+        (revision "0"))
+    (package
+      (name "pingus")
+      (version (git-version "0.7.6" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/Pingus/pingus")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0cnjrma5wfsgjxzclzsk5rycllfh2ncsv2frqwhijwm2ggwcm3am"))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        ;; XXX: tests build but are flagged as failing in pingus.nix
+        #:tests? #f
+        #:configure-flags #~(list "-DBUILD_TESTS=OFF")))
+      (native-inputs (list googletest pkg-config tinycmmc uitest))
+      (inputs (list argpp
+                    boost
+                    fmt-8
+                    geomcpp
+                    glm
+                    glu
+                    libpng
+                    libsigc++-2
+                    logmich
+                    mesa
+                    priocpp
+                    sdl2
+                    sdl2-image
+                    sdl2-mixer
+                    strutcpp
+                    tinygettext-with-sdl2
+                    wstsound
+                    xdgcpp))
+      (home-page "https://pingus.seul.org/")
+      (synopsis "Lemmings clone")
+      (description
+       "Pingus is a free Lemmings-like puzzle game in which the player takes
 command of a bunch of small animals and has to guide them through levels.
 Since the animals walk on their own, the player can only influence them by
 giving them commands, like build a bridge, dig a hole, or redirect all animals
 in the other direction.  Multiple such commands are necessary to reach the
 level's exit.  The game is presented in a 2D side view.")
-    ;; Some source files are under bsd-3 and gpl2+ licenses.
-    (license license:gpl3+)))
+      ;; Some source files are under bsd-3 and gpl2+ licenses.
+      (license license:gpl3+))))
 
 (define-public talkfilters
   (package
@@ -5035,6 +5033,88 @@ against each other or just trying to beat the computer; single-player mode is
 also available.")
     (license license:gpl3+)))
 
+(define ring-racers-data
+  (hidden-package
+   (package
+     (name "ring-racers-data")
+     (version "2.3")
+     (source
+      (origin
+        (method url-fetch/zipbomb)
+        (uri (string-append
+              "https://github.com/KartKrewDev/RingRacers/releases/download/v"
+              version "/Dr.Robotnik.s-Ring-Racers-v" version "-Assets.zip"))
+        (file-name (string-append name "-" version ".zip"))
+        (sha256
+         (base32 "0i6sq8c1vq7z5r5i1hana0v73xvj53696f2xwn37xicxds4d15wp"))))
+     (build-system copy-build-system)
+     (home-page "https://github.com/KartKrewDev/RingRacers/releases")
+     (synopsis "Data files for Ring Racers")
+     (description "This package contains data files for Ring Racers.")
+     (license license:gpl2+))))
+
+(define-public ring-racers
+  (package
+    (name "ring-racers")
+    (version "2.3")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://git.do.srb2.org/KartKrew/RingRacers")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "05lf799imbk0x3i2adaj0r84ck5yyrvzjvhs4k9dj7l4jg0x4sjz"))
+       (modules '((guix build utils)))
+       (snippet '(begin
+                   (with-directory-excursion "thirdparty"
+                     (delete-file-recursively "glm")
+                     (substitute* "CMakeLists.txt"
+                       (("add_subdirectory\\(glm\\)")
+                        "find_package(glm REQUIRED)")))
+                   (with-directory-excursion "src"
+                     (substitute* "CMakeLists.txt"
+                       (("glm::glm")
+                        "glm")))))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:tests? #f ;There are no tests.
+      #:configure-flags
+      #~(list "-DCMAKE_C_FLAGS_RELWITHDEBINFO='-O3 -g -DNDEBUG'"
+              "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO='-O3 -g -DNDEBUG'")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'install 'move-and-wrap-binary
+            ;; Install executable to $out/bin.
+            (lambda* (#:key inputs #:allow-other-keys)
+              (with-directory-excursion #$output
+                (mkdir "bin")
+                (rename-file "ringracers" "bin/ringracers")
+                (wrap-program "bin/ringracers"
+                  `("RINGRACERSWADDIR" =
+                    (,(assoc-ref inputs "ring-racers-data"))))))))))
+    (inputs (list glm
+                  libogg
+                  libpng
+                  libvorbis
+                  libvpx
+                  libyuv
+                  ring-racers-data
+                  sdl2
+                  zlib
+                  curl))
+    (home-page "https://kartkrew.org")
+    (synopsis "Technical kart racing game")
+    (description
+     "Dr. Robotnik's Ring Racers is a kart racing game drawing inspiration from
+``anti-gravity'' racers, fighting games, and traditional-style kart racing.
+Ring Racers is designed with an emphasis on player agency in the face of highly
+technical game-play challenges in both single-player and online multiplayer
+modes.")
+    (license license:gpl2+)))
+
 (define-public unknown-horizons
   (package
     (name "unknown-horizons")
@@ -5406,61 +5486,69 @@ engine.  When you start it you will be prompted to download a graphics set.")
     (license (list license:bsd-3 license:gpl2 license:lgpl2.1+ license:zlib))))
 
 (define openttd-opengfx
-  (package
-    (name "openttd-opengfx")
-    (version "7.1")
-    (source
-     (origin
-       (method url-fetch)
-       (uri (string-append "https://cdn.openttd.org/opengfx-releases/"
-                           version "/opengfx-" version "-source.tar.xz"))
-       (sha256
-        (base32
-         "0nhzlk6s73qvznm5fdwcs1b42g2plf26s5ag39fvck45zm7m48jk"))))
-    (build-system gnu-build-system)
-    (arguments
-     (list
-      #:make-flags
-      #~(list (string-append "CC=" #$(cc-for-target))
-              (string-append "INSTALL_DIR="
-                             #$output
-                             "/share/games/openttd/baseset/opengfx"))
-      #:phases
-      #~(modify-phases %standard-phases
-          (replace 'configure
-            (lambda _
-              ;; Make sure HOME is writable for GIMP.
-              (setenv "HOME" (getcwd))
+  (let ((commit "3739bbe9bdcd5bfbb2f720a99667f77d31caf02f")
+        (revision "0"))
+    (package
+      (name "openttd-opengfx")
+      (version (git-version "7.1" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/openttd/opengfx")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32
+           "03fhzlv4935868lxpdik7afz8cgsnzwr38a2blzmvy18c4lzc4m3"))))
+      (build-system gnu-build-system)
+      (arguments
+       (list
+        #:make-flags
+        #~(list (string-append "CC=" #$(cc-for-target))
+                (string-append "INSTALL_DIR="
+                               #$output
+                               "/share/games/openttd/baseset/opengfx")
+                "REPO_DATE=20000101"
+                (string-append "PYTHON="
+                               #$(this-package-native-input "python")
+                               "/bin/python3"))
+        #:phases
+        #~(modify-phases %standard-phases
+            (replace 'configure
+              (lambda _
+                ;; Make sure HOME is writable for GIMP.
+                (setenv "HOME" (getcwd))
 
-              (mkdir-p ".local/share")
-              (symlink (string-append #$(this-package-native-input "shared-mime-info")
-                                      "/share/mime")
-                       ".local/share/mime")
+                (mkdir-p ".local/share")
+                (symlink (string-append #$(this-package-native-input "shared-mime-info")
+                                        "/share/mime")
+                         ".local/share/mime")
 
-              ;; Redirect stdout, not stderr, to /dev/null. This prevents
-              ;; dos2unix from receiving its version information as a flag.
-              (substitute* "Makefile"
-                (("\\$\\(UNIX2DOS\\) -q --version 2>/dev/null")
-                 "$(UNIX2DOS) -q --version 1>/dev/null")))))
-       ;; The check phase for this package only checks the md5sums of the built
-       ;; GRF files against the md5sums of the release versions. Because we use
-       ;; different software versions than upstream does, some of the md5sums
-       ;; are different. However, the package is still reproducible, it's safe
-       ;; to disable this test.
-       #:tests? #f
-       #:parallel-build? #f))
-    (native-inputs
-     (list dos2unix
-           shared-mime-info
-           gimp
-           grfcodec
-           nml
-           which
-           python))
-    (home-page "http://dev.openttdcoop.org/projects/opengfx")
-    (synopsis "Base graphics set for OpenTTD")
-    (description
-     "The OpenGFX project is an implementation of the OpenTTD base graphics
+                ;; Redirect stdout, not stderr, to /dev/null. This prevents
+                ;; dos2unix from receiving its version information as a flag.
+                (substitute* "Makefile"
+                  (("\\$\\(UNIX2DOS\\) -q --version 2>/dev/null")
+                   "$(UNIX2DOS) -q --version 1>/dev/null")))))
+        ;; The check phase for this package only checks the md5sums of the built
+        ;; GRF files against the md5sums of the release versions. Because we use
+        ;; different software versions than upstream does, some of the md5sums
+        ;; are different. However, the package is still reproducible, it's safe
+        ;; to disable this test.
+        #:tests? #f
+        #:parallel-build? #f))
+      (native-inputs
+       (list dos2unix
+             shared-mime-info
+             gimp
+             grfcodec
+             nml
+             which
+             python))
+      (home-page "http://dev.openttdcoop.org/projects/opengfx")
+      (synopsis "Base graphics set for OpenTTD")
+      (description
+       "The OpenGFX project is an implementation of the OpenTTD base graphics
 set that aims to ensure the best possible out-of-the-box experience.
 
 OpenGFX provides you with...
@@ -5471,7 +5559,7 @@ OpenGFX provides you with...
 @item Different river and sea water.
 @item Snow-aware buoys.
 @end enumerate")
-    (license license:gpl2)))
+      (license license:gpl2))))
 
 (define openttd-opensfx
   (package
@@ -5917,6 +6005,40 @@ logging, so games can be viewed again.")
 are only two levels to play with, but they are very addictive.")
     (license license:gpl2)))
 
+(define-public trackballs
+  (package
+    (name "trackballs")
+    (version "1.3.4")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/trackballs/trackballs")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1vr35i5y93n155m20mvsri42r8k3hphpc8fmrv8wmfv6xqss5914"))))
+    (build-system cmake-build-system)
+    (native-inputs (list pkg-config
+                         gettext-minimal))
+    (inputs (list guile-2.2
+                  mesa
+                  sdl2
+                  sdl2-image
+                  sdl2-mixer
+                  sdl2-ttf
+                  zlib))
+    (arguments (list #:tests? #f))      ;No test suite.
+    (home-page "https://trackballs.github.io/")
+    (synopsis "Marble-rolling puzzle/skill game")
+    (description
+     "Trackballs is a simple game similar to the classic Amiga game @cite{Marble
+Madness}.  By steering a marble ball through a labyrinth filled with vicious
+hammers, pools of acid and other obstacles the player collects points.  When the
+ball reaches the destination it continues at the next, more difficult level -
+unless the time runs out.")
+    (license license:gpl2+)))
+
 (define-public pioneers
   (package
     (name "pioneers")
@@ -6350,7 +6472,7 @@ in-window at 640x480 resolution or fullscreen.")
                        "iV_DrawTextRotated(\"Press ESC to exit.\", "
                        "100, 100, 0.0f, font_regular);"))))))))
     (native-inputs (list asciidoc
-                     ruby-asciidoctor
+                     ruby-asciidoctor/minimal
                      gettext-minimal
                      pkg-config
                      unzip
@@ -6606,76 +6728,86 @@ that sets it apart from other monster fighting RPGs.")
 (define-public tuxpaint
   (package
     (name "tuxpaint")
-    (version "0.9.23")                  ;keep VER_DATE below in sync
+    (version "0.9.34") ;keep VER_DATE below in sync
     (source
      (origin
        (method url-fetch)
-       (uri (string-append "mirror://sourceforge/tuxpaint/tuxpaint/"
-                           version "/tuxpaint-" version ".tar.gz"))
+       (uri (string-append "mirror://sourceforge/tuxpaint/tuxpaint/" version
+                           "/tuxpaint-" version ".tar.gz"))
        (sha256
-        (base32
-         "09k9pxi88r3dx6dyjwf9h85d4qpva4i29qz63dc558hg9v21k69l"))
+        (base32 "00zdf3iza3qrbwmwn9q5fw5z29i1pw63xaq9d15f1ac6sdgdyqdp"))
        (modules '((guix build utils)))
-       (snippet
-        '(begin
-           ;; Remove win32 directory which contains binary dll's and the
-           ;; deprecated visualc directory.
-           (for-each delete-file-recursively '("win32" "visualc"))
-           (substitute* "Makefile"
-             ;; Do not rely on $(GPERF) being an absolute file name
-             (("\\[ -x \\$\\(GPERF\\) \\]")
-              "$(GPERF) --version >/dev/null 2>&1"))
-           #t))
+       (snippet '(begin
+                   ;; Remove win32 directory which contains binary dll's and the
+                   ;; deprecated visualc directory.
+                   (for-each delete-file-recursively
+                             '("win32" "visualc"))
+                   (substitute* "Makefile"
+                     ;; Do not rely on $(GPERF) being an absolute file name
+                     (("\\[ -x \\$\\(GPERF\\) \\]")
+                      "$(GPERF) --version >/dev/null 2>&1")) #t))
        (patches (search-patches "tuxpaint-stamps-path.patch"))))
     (build-system gnu-build-system)
-    (native-inputs
-     (list gperf pkg-config))
-    (inputs
-     (list bash-minimal
-           cairo
-           fribidi
-           gettext-minimal
-           libpng
-           (librsvg-for-system)
-           libpaper
-           netpbm
-           (sdl-union (list sdl sdl-mixer sdl-ttf sdl-image))))
+    (native-inputs (list gperf imagemagick pkg-config))
+    (inputs (list bash-minimal
+                  cairo
+                  fribidi
+                  gettext-minimal
+                  libimagequant
+                  libpng
+                  (librsvg-for-system)
+                  libpaper
+                  netpbm
+                  pango
+                  sdl2
+                  sdl2-gfx
+                  sdl2-image
+                  sdl2-mixer
+                  sdl2-pango
+                  sdl2-ttf))
     ;; TODO: Use system fonts rather than those in data/fonts
     (arguments
-     `(#:make-flags `("VER_DATE=2018-09-02"
-                      "GPERF=gperf" "CC=gcc"
-                      "SDL_PCNAME=sdl SDL_image SDL_mixer SDL_ttf"
-                      ,(string-append "PREFIX=" %output)
-                      "KDE_PREFIX=$(PREFIX)/share/applications"
-                      "KDE_ICON_PREFIX=$(PREFIX)/share/icons/"
-                      "COMPLETIONDIR=$(PREFIX)/etc/bash_completion.d")
-       #:parallel-build? #f             ;fails on some systems
-       #:tests? #f                      ;No tests
-       #:phases (modify-phases %standard-phases
-                  (delete 'configure)   ;no configure phase
-                  (add-before 'install 'no-sys-cache
-                    (lambda _           ;do not rebuild system conf cache
-                      (substitute* "Makefile"
-                        (("kbuildsycoca4") ""))))
-                  (add-after 'install 'fix-import
-                    (lambda* (#:key inputs outputs #:allow-other-keys)
-                      (let* ((out (assoc-ref outputs "out"))
-                             (net (assoc-ref inputs "netpbm"))
-                             (tpi (string-append out "/bin/tuxpaint-import")))
-                        (substitute* tpi
-                          ;; Point to installation prefix so that the default
-                          ;; configure file is found.
-                          (("/usr/local") out))
-                        ;; tuxpaint-import uses a bunch of programs from
-                        ;; netpbm, so make sure it knows where those are
-                        (wrap-program tpi
-                          `("PATH" ":" prefix
-                            (,(string-append net "/bin"))))))))))
+     (list
+      #:make-flags
+      #~(list "VER_DATE=2024-10-25"
+              "GPERF=gperf"
+              (string-append "CC="
+                             #$(cc-for-target))
+              "SDL_PCNAME=sdl2 SDL2_image SDL2_mixer SDL2_ttf SDL2_gfx"
+              (string-append "PREFIX="
+                             #$output)
+              "KDE_PREFIX=$(PREFIX)/share/applications"
+              "KDE_ICON_PREFIX=$(PREFIX)/share/icons/"
+              "COMPLETIONDIR=$(PREFIX)/etc/bash_completion.d")
+      #:parallel-build? #f              ;fails on some systems
+      #:tests? #f                       ;No tests
+      #:phases
+      #~(modify-phases %standard-phases
+          (delete 'configure) ;no configure phase
+          (add-before 'install 'no-sys-cache
+            (lambda _
+               ;do not rebuild system conf cache
+              (substitute* "Makefile"
+                (("kbuildsycoca4")
+                 ""))))
+          (add-after 'install 'fix-import
+            (lambda _
+              (let* ((tpi (string-append #$output "/bin/tuxpaint-import")))
+                (substitute* tpi
+                  ;; Point to installation prefix so that the default
+                  ;; configure file is found.
+                  (("/usr/local")
+                   #$output))
+                ;; tuxpaint-import uses a bunch of programs from
+                ;; netpbm, so make sure it knows where those are
+                (wrap-program tpi
+                  `("PATH" ":" prefix
+                    (,(string-append #$(this-package-input "netpbm") "/bin"))))))))))
     (native-search-paths
      (list (search-path-specification
             (variable "TUXPAINT_STAMPS_PATH")
             (files '("share/tuxpaint/stamps")))))
-    (home-page "http://www.tuxpaint.org")
+    (home-page "https://tuxpaint.org")
     (synopsis "Drawing software for children")
     (description
      "Tux Paint is a free drawing program designed for young children (kids
@@ -6688,7 +6820,7 @@ your child be creative.")
 (define-public tuxpaint-stamps
   (package
     (name "tuxpaint-stamps")
-    (version "2018.09.01")
+    (version "2024.10.25")
     (source
      (origin
        (method url-fetch)
@@ -6697,24 +6829,9 @@ your child be creative.")
                            "/tuxpaint-stamps-" version ".tar.gz"))
        (sha256
         (base32
-         "1skr23k27yj3vgwfazpzxp90lb2a278gxrkr3bxw7az6zpkmb3yp"))))
-    (build-system trivial-build-system)
-    (native-inputs
-     (list tar gzip))
-    (arguments
-     `(#:modules ((guix build utils))
-       #:builder (begin
-                   (use-modules (guix build utils))
-                   (setenv "PATH"
-                           (string-append
-                            (assoc-ref %build-inputs "tar") "/bin" ":"
-                            (assoc-ref %build-inputs "gzip") "/bin"))
-                   (invoke "tar" "xvf" (assoc-ref %build-inputs "source"))
-                   (chdir (string-append ,name "-" ,version))
-                   (let ((dir (string-append %output "/share/tuxpaint/stamps")))
-                     (mkdir-p dir)
-                     (copy-recursively "stamps" dir))
-                   #t)))
+         "19vng3h6icd7zs2arfmkcg4w7snsw5syx956ww05xgvwll9s2hal"))))
+    (build-system copy-build-system)
+    (arguments (list #:install-plan #~'(("stamps" "share/tuxpaint/"))))
     (home-page (package-home-page tuxpaint))
     (synopsis "Stamp images for Tux Paint")
     (description
@@ -6725,7 +6842,7 @@ with the \"Stamp\" tool within Tux Paint.")
 (define-public tuxpaint-config
   (package
     (name "tuxpaint-config")
-    (version "0.0.14")                  ;keep VER_DATE below in sync
+    (version "0.0.25")                  ;keep VER_DATE below in sync
     (source
      (origin
        (method url-fetch)
@@ -6733,19 +6850,20 @@ with the \"Stamp\" tool within Tux Paint.")
                            version "/tuxpaint-config-" version ".tar.gz"))
        (sha256
         (base32
-         "0zkgxk436nqcp43zghkfmh397c7dvh5bwn2as7gwvv208bzyij6g"))))
+         "16awjwxr2wf6v05wr2z01kgnah2nwwk9k5y25fb3lawnzy0aqild"))))
     (build-system gnu-build-system)
-    (native-inputs
-     `(("gettext" ,gettext-minimal)))
+    (native-inputs (list gettext-minimal pkg-config))
     (inputs
      (list fltk
            libpaper
+           libunibreak
+           pango
            ;; TODO: Should the following be propagated by fltk?
            libx11
            libxft
            mesa))
     (arguments
-     `(#:make-flags `("VER_DATE=2018-09-01"
+     `(#:make-flags `("VER_DATE=2024-11-15"
                       "CONFDIR=/etc/tuxpaint" ;don't write to store
                       ,(string-append "PREFIX=" %output)
                       "GNOME_PREFIX=$(PREFIX)")
@@ -7291,6 +7409,43 @@ This command works on piped data.  Pipe any ASCII or UTF-8 text to nms, and
 it will apply the hollywood effect, initially showing encrypted data, then
 starting a decryption sequence to reveal the original plaintext characters.")
     (license license:expat)))
+
+(define-public asciiquarium
+  (package
+    (name "asciiquarium")
+    (version "1.1")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (string-append
+             "https://robobunny.com/projects/asciiquarium/asciiquarium_"
+             version ".tar.gz"))
+       (sha256
+        (base32 "0qfkr5b7sxzi973nh0h84blz2crvmf28jkkgaj3mxrr56mhwc20v"))))
+    (build-system copy-build-system)
+    (inputs (list bash-minimal perl perl-curses perl-term-animation))
+    (arguments
+     (list
+      #:install-plan
+      #~'(("asciiquarium" "bin/")
+          ("README" "share/doc/asciiquarium/"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'install 'chmod
+            (lambda _
+              (chmod (string-append #$output "/bin/asciiquarium") #o755)))
+          (add-after 'chmod 'wrap-perl-bin
+            (lambda _
+              (wrap-program (string-append #$output "/bin/asciiquarium")
+                `("PERL5LIB" ":" prefix
+                  (,(getenv "PERL5LIB")))))))))
+    (home-page "https://robobunny.com/projects/asciiquarium/html/")
+    (synopsis "ASCII aquarium for the terminal")
+    (license license:gpl2+)
+    (description
+     "The @code{asciiquarium} package renders a fullscreen animation of an
+aquarium with various fish in the terminal, which can make for a nice
+screensaver.")))
 
 (define-public megaglest-data
   (package
@@ -8184,8 +8339,8 @@ at their peak of economic growth and military prowess.
              python-pylint
              python-pyyaml
              python-wrapper)
-       (if (supported-package? ruby-asciidoctor)
-           (list ruby-asciidoctor)
+       (if (supported-package? ruby-asciidoctor/minimal)
+           (list ruby-asciidoctor/minimal)
            '())))
     (home-page "https://gitlab.com/esr/open-adventure")
     (synopsis "Colossal Cave Adventure")
@@ -8481,16 +8636,16 @@ some graphical niceities, and numerous bug-fixes and other improvements.")
   (package
     (inherit quakespasm)
     (name "vkquake")
-    (version "1.01.0")
+    (version "1.32.3.1")
     (source
      (origin
        (method git-fetch)
        (uri (git-reference
-             (url "https://github.com/Novum/vkQuake")
-             (commit version)))
+              (url "https://github.com/Novum/vkQuake")
+              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1iwin8j5kbyrknbkhjgpy8nmm7pxqzr0daa9gn7p38qhg2mh0a39"))))
+        (base32 "0ch9rd6fckqs9bhh6z8qpdi2byra6lhk00y3vj4804351hpgmj0y"))))
     (arguments
      `(#:make-flags
        (let ((vulkanlib (string-append (assoc-ref %build-inputs
@@ -8527,8 +8682,11 @@ some graphical niceities, and numerous bug-fixes and other improvements.")
        ,@(strip-keyword-arguments '(#:make-flags #:phases)
                                   (package-arguments quakespasm))))
     (inputs (modify-inputs (package-inputs quakespasm)
-              (prepend vulkan-headers vulkan-loader)
-              (replace "sdl2" sdl2-2.0)))
+              (prepend
+               glslang
+               spirv-tools
+               vulkan-loader
+               vulkan-headers)))
     (description "vkquake is a modern engine for id software's Quake 1.
 It includes support for 64 bit CPUs, custom music playback, a new sound driver,
 some graphical niceities, and numerous bug-fixes and other improvements.")
@@ -8537,14 +8695,14 @@ some graphical niceities, and numerous bug-fixes and other improvements.")
 (define-public yamagi-quake2
   (package
     (name "yamagi-quake2")
-    (version "8.30")
+    (version "8.51")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "https://deponie.yamagi.org/quake2/quake2-"
                            version ".tar.xz"))
        (sha256
-        (base32 "11lv22y5ccd80iyhk6zj94wligcbx6x5vwbqh3jkgz96v0x5dng2"))))
+        (base32 "0xk321ph15wgydlmln3k7bdn4zdls2zliggsnkjwlnbax0cfy3z4"))))
     (build-system gnu-build-system)
     (arguments
      `(#:tests? #f
@@ -9797,7 +9955,7 @@ your score gets higher, you level up and the blocks fall faster.")
 (define-public endless-sky
   (package
     (name "endless-sky")
-    (version "0.10.10")
+    (version "0.10.14")
     (source
      (origin
        (method git-fetch)
@@ -9806,13 +9964,14 @@ your score gets higher, you level up and the blocks fall faster.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1nwim56ii3z6f9gxvmf9q4i5chlsgk3kjisz8li6ivr595wq5502"))))
+        (base32 "198ijk95qhq5qicp27f26g0pqsqdgjyb9ll3dmd3dq8b68j3xyfc"))))
     (build-system cmake-build-system)
     (arguments
      (list #:configure-flags #~(list "-DES_USE_VCPKG=0"
                                      "-DES_USE_SYSTEM_LIBRARIES=1")
            #:make-flags #~(list (string-append "PREFIX=" #$output))
            #:build-type "Release"
+	   #:tests? (not (target-x86-32?))
            #:phases
            #~(modify-phases %standard-phases
                (add-after 'unpack 'fix-paths
@@ -9829,7 +9988,9 @@ your score gets higher, you level up and the blocks fall faster.")
            libjpeg-turbo
            libmad
            libpng
+           minizip
            openal
+           pkgconf
            sdl2
            `(,util-linux "lib"))) ; for libuuid
     (home-page "https://endless-sky.github.io/")
@@ -9846,12 +10007,11 @@ civilized than your own.")
                    license:public-domain))))
 
 (define-public speed-dreams-data
-  ;; Use the commit corresponding to the 'speed-dreams-data' submodule
-  ;; (https://forge.a-lec.org/speed-dreams/speed-dreams-data).
+  ;; Use the same tag version as speed-dreams package.
   (hidden-package
    (package
      (name "speed-dreams-data")
-     (version "2.4.0")
+     (version "2.4.2")
      (source
       (origin
         (method git-fetch)
@@ -9862,7 +10022,7 @@ civilized than your own.")
         (file-name (git-file-name name version))
         (sha256
          (base32
-          "0ki620pq5gcn10l5328qsh6jdjsgrvyb4fhvgi0s9fvflzzg6905"))))
+          "1igavpsn8v9v866hawmgx47a6wz0bxykmf540961jfzav85j5m7p"))))
      (build-system cmake-build-system)
      (arguments (list #:tests? #f))   ;no test suite
      (home-page "https://www.speed-dreams.net/en")
@@ -9871,10 +10031,42 @@ civilized than your own.")
 Speed Dreams racing game.")
      (license license:gpl2+))))
 
+(define-public speed-dreams-freesolid
+  ;; Use the commit corresponding to the 'freesolid' submodule
+  ;; (https://forge.a-lec.org/speed-dreams/speed-dreams-code).
+  (hidden-package
+    (package
+      (name "speed-dreams-freesolid")
+      (version "2.1.2")
+      (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                     (url (string-append "https://forge.a-lec.org/speed-dreams/freesolid"))
+                     (commit "2c0071923be6afb487ed4e3b84da501f0a2e7e2d")))
+              (file-name (git-file-name name version))
+              (sha256
+               (base32
+                "025ml2nzhkfki28ckjjggqpkr1gd02c2blpr4afc5175r8bfh2w4"))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        #:tests? #f ;no test suite
+        #:build-type "Release"
+        #:configure-flags
+          #~(list "-DBUILD_SHARED_LIBS=ON"))) ;speed-dreams build system needs a shared library
+
+      (home-page "https://forge.a-lec.org/speed-dreams/freesolid")
+      (synopsis "Speed-Dreams 3D collision detection C++ library")
+      (description "Speed Dreams FreeSOLID is a fork of FreeSOLID, a library for
+collision detection of three-dimensional objects undergoing rigid motion and
+deformation. It is designed to be used in interactive 3D graphics
+applications.")
+      (license license:lgpl2.0+))))
+
 (define-public speed-dreams
   (package
     (name "speed-dreams")
-    (version "2.4.0")
+    (version "2.4.2")
     (source
      (origin
        (method git-fetch)
@@ -9885,14 +10077,15 @@ Speed Dreams racing game.")
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "150mwjdv9pmc3cjchfbkprnlbsnw2gv57350lir5vbh77xrgpn8c"))))
+         "0r8liki7rcpi85a829qjbj37cnh00899qr8a09qsfj47cj52qi47"))))
     (build-system cmake-build-system)
     (arguments
      (list
-      #:tests? #f                       ;no test suite
+      #:tests? #f                          ;no test suite
       #:build-type "Release"
       #:configure-flags
-      #~(list "-DOPTION_3RDPARTY_EXPAT=ON" ;use system expat library
+      #~(list "-DOPTION_TRACKEDITOR=OFF"   ;not detecting jdk properly
+              "-DOPTION_3RDPARTY_EXPAT=ON" ;use system expat library
               "-DSD_BINDIR:PATH=bin"       ;install to /bin instead of /games
               (string-append "-DVERSION_LONG=" #$version))))
     (native-inputs (list pkg-config speed-dreams-data))
@@ -9902,7 +10095,7 @@ Speed Dreams racing game.")
            enet
            expat
            freeglut
-           freesolid
+           speed-dreams-freesolid
            freetype
            glm
            libjpeg-turbo
@@ -10121,76 +10314,79 @@ download and unpack them separately.")
        (uri (string-append "mirror://sourceforge/btanks/btanks-source/"
                            "btanks-" version ".tar.bz2"))
        (sha256
-        (base32
-         "0ha35kxc8xlbg74wsrbapfgxvcrwy6psjkqi7c6adxs55dmcxliz"))))
+        (base32 "0ha35kxc8xlbg74wsrbapfgxvcrwy6psjkqi7c6adxs55dmcxliz"))
+       (patches
+        (search-patches "btanks-scons-python.patch"
+                        "btanks-sl08-python.patch"))))
     (build-system scons-build-system)
     (arguments
-     `(#:tests? #f                      ; there are none
-       #:scons ,scons-python2
-       #:scons-flags (list (string-append "prefix=" (assoc-ref %outputs "out")))
-       #:phases
-       (modify-phases %standard-phases
-         (add-after 'unpack 'replace-removed-scons-syntax
-           (lambda _
-             (substitute* "SConstruct"
-               (("Options") "Variables")
-               (("opts.Add\\(BoolOption.*") "opts.Add('gcc_visibility', 'gcc visibility', 'true')")
-               (("opts.Add\\(EnumOption.*") "opts.Add('mode', 'build mode', 'release')"))
-             #t))
-         (add-after 'set-paths 'set-sdl-paths
-           (lambda* (#:key inputs #:allow-other-keys)
-             (setenv "CPATH"
-                     (string-append
-                      (search-input-directory inputs "/include/SDL")
-                      ":" (or (getenv "CPATH") "")))))
-         (add-after 'unpack 'fix-compilation-errors
-           (lambda _
-             (substitute* "mrt/base_file.h"
-               (("#include <string>" m)
-                (string-append m "\n#include <sys/types.h>")))
-             (substitute* '("engine/sl08/sl08.h"
-                            "engine/sl08/sl08.py")
-               (("signal = NULL") "signal = 0")
-               (("object\\(NULL\\)") "object(0)")
-               (("func\\(NULL\\)") "func(0)")
-               ((" connect\\(signal_ref\\)")
-                " this->connect(signal_ref)"))
-             (substitute* "math/range_list.h"
-               ((" lower_bound\\(value\\)")
-                " this->lower_bound(value)")
-               (("	erase\\(i\\)")
-                "	this->erase(i)"))
-             (substitute* "clunk/source.cpp"
-               (("using namespace clunk" m)
-                (string-append "# define pow10f(x) exp10f(x)\n" m)))
-             #t))
-         (add-after 'unpack 'find-lua
-           (lambda _
-             (substitute* "engine/SConscript"
-               (("lua5.1") "lua-5.1")
-               (("bt_libs.append\\(lua\\)")
-                "bt_libs.append(\"lua\")"))
-             #t)))))
-    (inputs
-     `(("expat" ,expat)
-       ("glu" ,glu)
-       ("libsmpeg" ,libsmpeg-with-sdl1)
-       ("libvorbis" ,libvorbis)
-       ("lua51" ,lua-5.1)
-       ("sdl" ,(sdl-union (list sdl
-                                sdl-mixer
-                                sdl-image
-                                sdl-ttf)))
-       ("zlib" ,zlib)))
-    (native-inputs
-     (list pkg-config zip))
+     (list
+      #:tests? #f ;there are none
+      #:scons-flags
+      #~(list (string-append "prefix=" #$output))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'replace-removed-scons-syntax
+            (lambda _
+              (substitute* "SConstruct"
+                ;; XXX: Shorten CheckLibWithHeader.
+                (("\"xmmintrin\\.h\"")
+                 "'xmmintrin.h'")
+                (("(conf\\.CheckLibWithHeader\\(.*), \".*\\)" all check)
+                 (string-append check ")")))))
+          (add-after 'set-paths 'set-sdl-paths
+            (lambda* (#:key inputs #:allow-other-keys)
+              (setenv "CPATH"
+                      (string-append (search-input-directory inputs
+                                                             "/include/SDL")
+                                     ":"
+                                     (or (getenv "CPATH") "")))))
+          (add-after 'unpack 'fix-compilation-errors
+            (lambda _
+              (substitute* "mrt/base_file.h"
+                (("#include <string>" m)
+                 (string-append m "\n#include <sys/types.h>")))
+              (substitute* '("engine/sl08/sl08.h" "engine/sl08/sl08.py")
+                (("signal = NULL")
+                 "signal = 0")
+                (("object\\(NULL\\)")
+                 "object(0)")
+                (("func\\(NULL\\)")
+                 "func(0)")
+                ((" connect\\(signal_ref\\)")
+                 " this->connect(signal_ref)"))
+              (substitute* "math/range_list.h"
+                ((" lower_bound\\(value\\)")
+                 " this->lower_bound(value)")
+                (("\terase\\(i\\)")
+                 "\tthis->erase(i)"))
+              (substitute* "clunk/source.cpp"
+                (("using namespace clunk" m)
+                 (string-append "# define pow10f(x) exp10f(x)\n" m)))))
+          (add-after 'unpack 'find-lua
+            (lambda _
+              (substitute* "engine/SConscript"
+                (("lua5.1")
+                 "lua-5.1")
+                (("bt_libs.append\\(lua\\)")
+                 "bt_libs.append(\"lua\")")))))))
+    (inputs (list expat
+                  glu
+                  libsmpeg-with-sdl1
+                  libvorbis
+                  lua-5.1
+                  python-wrapper
+                  (sdl-union (list sdl sdl-mixer sdl-image sdl-ttf))
+                  zlib))
+    (native-inputs (list pkg-config zip))
     (home-page "https://btanks.sourceforge.net")
     (synopsis "Multiplayer tank battle game")
-    (description "Battle Tanks (also known as \"btanks\") is a funny battle
-game, where you can choose one of three vehicles and eliminate your enemy
-using the whole arsenal of weapons.  It has original cartoon-like graphics and
-cool music, it’s fun and dynamic, it has several network modes for deathmatch
-and cooperative.")
+    (description
+     "Battle Tanks (also known as \"btanks\") is a funny battle game, where
+you can choose one of three vehicles and eliminate your enemy using the whole
+arsenal of weapons.  It has original cartoon-like graphics and cool music,
+it’s fun and dynamic, it has several network modes for deathmatch and
+cooperative.")
     ;; Some parts (e.g. mrt/b64.cpp) are LGPLv2.1+, but the whole package is
     ;; released under GPLv2 or later.  It comes with extra exceptions for the
     ;; developers.
@@ -11797,8 +11993,8 @@ for using any UCI engine and also to connect UCI engines to Lichess and IRC.")
         (base32 "1kkcnpkzgybm7rqg7nafd7sqd5m4alns6l4j5zcf3p41jdc9s3iv"))))
     (build-system glib-or-gtk-build-system)
     (inputs (list automake autoconf pkg-config intltool
-		 gnu-gettext libtool glib gtk+-2 boost))
-    (arguments `(#:tests? #f))
+		  gettext-minimal libtool glib gtk+-2 boost))
+    (arguments (list #:tests? #f))  ; No tests in source.
     (home-page "http://nine-mens-morris.net/downloads.html")
     (synopsis "Implementation of the board game Nine Men's Morris")
     (description "Morris is an implementation of the board game Nine Men's Morris.
@@ -12809,27 +13005,29 @@ the map.")
       (license license:expat))))
 
 (define-public freerct
-  (package
-    (name "freerct")
-    (version "0.1")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://github.com/FreeRCT/FreeRCT")
-                    (commit version)))
-              (file-name (git-file-name name version))
-              (sha256
-               (base32
-                "1szwy2cq4ffp4yxm9pp9vdyia0i5nz0wnppdd1xb9w7v3wa4mywi"))))
-    (build-system cmake-build-system)
-    (arguments
-     `(#:tests? #f))
-    (native-inputs (list flex bison))
-    (inputs (list libpng sdl2 sdl2-ttf))
-    (home-page "https://freerct.net/")
-    (synopsis "Theme park management simulation game")
-    (description
-     "FreeRCT is a game that captures the look and feel of the popular games
+  (let ((commit "f85335dc98cdb28081b38cdf23409ac8a91d9a66")
+        (revision "0"))
+    (package
+      (name "freerct")
+      (version (git-version "0.1" revision commit))
+      (source (origin
+                (method git-fetch)
+                (uri (git-reference
+                      (url "https://codeberg.org/FreeRCT/FreeRCT")
+                      (commit commit)))
+                (file-name (git-file-name name version))
+                (sha256
+                 (base32
+                  "1mimwgw487dxr2h1kxciwz34hk06g1lfgpicrav7khh19843a2fq"))))
+      (build-system cmake-build-system)
+      (arguments
+       `(#:tests? #f))
+      (native-inputs (list flex bison))
+      (inputs (list libpng glfw glew freetype))
+      (home-page "https://freerct.net/")
+      (synopsis "Theme park management simulation game")
+      (description
+       "FreeRCT is a game that captures the look and feel of the popular games
 RollerCoaster Tycoon 1 and 2, graphics- and gameplay-wise.
 
 In this game, you play as a manager of a theme park, allowing you to make a
@@ -12838,7 +13036,7 @@ finances, landscaping, and most importantly: rides.  Good managers follow the
 principle of prioritizing the guests' happiness with a well-maintained park.
 Should they go unwise, a theme park plunge into chaos with vandalizing guests
 and unsafe rides.  Which path will you take?")
-    (license license:gpl2)))
+      (license license:gpl2))))
 
 (define-public ultrastar-deluxe
   (package
@@ -12951,104 +13149,105 @@ Jongg tiles from the playing field by taking one matching pair at a time.")
 (define-public sc-controller
   (package
     (name "sc-controller")
-    (version "0.4.8.9")
+    (version "0.5.2")
     (source (origin
               (method git-fetch)
               (uri (git-reference
-                    (url "https://github.com/Ryochan7/sc-controller")
+                    (url "https://github.com/C0rn3j/sc-controller")
                     (commit (string-append "v" version))))
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1410yj6947yq43wwrj3cwllalalggzmd74sad70jd1niwj85yvna"
-                ))))
-    (build-system python-build-system)
+                "1zczdaxf76n1h6v3daaml7zd2ga808sscfp4bhnagfvw8y3xbf63"))))
+    (build-system pyproject-build-system)
     (arguments
-     (list #:phases #~(modify-phases %standard-phases
-                        (delete 'sanity-check)
-                        (add-after 'unpack 'remove-bundled-libraries
-                          (lambda _
-                            (with-directory-excursion "scc/lib"
-                              (for-each delete-file
-                                        '("enum.py" "jsonencoder.py"
-                                          "libusb1.py" "usb1.py")))
-                            ;; libusb1 fixes
-                            (substitute* '("scc/uinput.py"
-                                           "scc/drivers/usb.py"
-                                           "scc/drivers/steamdeck.py"
-                                           "scc/drivers/sc_by_cable.py")
-                              (("scc\\.lib\\.libusb1")
-                               "libusb1")
-                              (("scc\\.lib\\.usb1")
-                               "usb1")
-                              (("from scc\\.lib import usb1")
-                               "import usb1"))
-                            ;; enum fixes
-                            (substitute* "scc/cemuhook_server.py"
-                              (("scc\\.lib\\.enum")
-                               "enum"))
-                            ;; simplejson fixes
-                            (substitute* "scc/profile.py"
-                              (("from scc\\.lib\\.jsonencoder")
-                               "from simplejson"))))
-                        (add-after 'unpack 'fix-paths
-                          (lambda _
-                            (substitute* "scc/lib/xwrappers.py"
-                              (("libXfixes.so")
-                               (string-append (assoc-ref %build-inputs
-                                                         "libxfixes")
-                                              "/lib/libXfixes.so"))
-                              (("libXext.so")
-                               (string-append (assoc-ref %build-inputs
-                                                         "libxext")
-                                              "/lib/libXext.so")))
-                            (substitute* "scc/lib/eudevmonitor.py"
-                              (("libudev.so")
-                               (string-append (assoc-ref %build-inputs "eudev")
-                                              "/lib/libudev.so")))
-                            (substitute* "scc/uinput.py"
-                              (("/usr/include")
-                               (string-append (assoc-ref %build-inputs
-                                                         "linux-libre-headers")
-                                              "/include")))
-                            (substitute* '("scc/gui/app.py"
-                                           "scc/osd/inputdisplay.py"
-                                           "scc/paths.py")
-                              (("/usr/share/scc")
-                               (string-append #$output "/share/scc")))))
-                        (add-after 'wrap 'gi-wrap
-                          (lambda _
-                            (for-each (lambda (prog)
-                                        (wrap-program (string-append #$output
-                                                                     "/bin/"
-                                                                     prog)
-                                          `("GI_TYPELIB_PATH" =
-                                            (,(getenv
-                                               "GI_TYPELIB_PATH")))))
-                                      '("sc-controller" "scc"
-                                        "scc-daemon"
-                                        "scc-osd-dialog"
-                                        "scc-osd-keyboard"
-                                        "scc-osd-launcher"
-                                        "scc-osd-menu"
-                                        "scc-osd-message"
-                                        "scc-osd-radial-menu"
-                                        "scc-osd-show-bindings")))))))
-    (inputs (list bash-minimal
-                  gtk+
-                  gtk-layer-shell
-                  eudev
-                  libxext
-                  libxfixes
-                  linux-libre-headers
-                  python-pycairo
-                  python-evdev
-                  python-libusb1
-                  python-pylibacl
-                  python-pygobject
-                  python-simplejson
-                  python-vdf
-                  zlib))
+     (list
+      #:imported-modules `((guix build glib-or-gtk-build-system)
+                           ,@%pyproject-build-system-modules)
+      #:modules '((guix build pyproject-build-system)
+                  ((guix build glib-or-gtk-build-system) #:prefix glib-or-gtk:)
+                  (guix build utils))
+      #:phases #~(modify-phases %standard-phases
+                   (delete 'sanity-check)
+                   (add-after 'unpack 'generate-gdk-pixbuf-loaders-cache-file
+                     (assoc-ref glib-or-gtk:%standard-phases 'generate-gdk-pixbuf-loaders-cache-file))
+                   (add-before 'build 'no-install-udev
+                     (lambda _
+                       ;; Installing udev rules errors out.  Install them manually later
+                       (substitute* "setup.py"
+                         ((".*lib/udev.*") ""))))
+                   (add-before 'build 'set-version
+                     (lambda _
+                       (setenv "SETUPTOOLS_SCM_PRETEND_VERSION" #$version)))
+                   (add-after 'unpack 'remove-bundled-libraries
+                     (lambda _
+                       (delete-file "scc/lib/jsonencoder.py")
+                       (substitute* "scc/profile.py"
+                         (("from scc\\.lib\\.jsonencoder")
+                          "from simplejson"))))
+                   (add-after 'unpack 'fix-paths
+                     (lambda _
+                       (substitute* '("scc/lib/xwrappers.py"
+                                      "scc/lib/eudevmonitor.py")
+                         (("libXfixes\\.so|libXext\\.so|libudev\\.so" library)
+                          (search-input-file %build-inputs (string-append "lib/" library))))
+                       (substitute* "scc/uinput.py"
+                         (("/usr/include")
+                          (string-append (assoc-ref %build-inputs
+                                                    "linux-libre-headers")
+                                         "/include")))
+                       (substitute* '("scc/gui/app.py"
+                                      "scc/osd/inputdisplay.py"
+                                      "scc/paths.py")
+                         (("/usr/share/scc")
+                          (string-append #$output "/share/scc")))))
+                   (add-after 'install 'install-udev
+                     (lambda _
+                       (for-each
+                        (lambda (udev-rule)
+                          (install-file udev-rule
+                                        (string-append
+                                         #$output
+                                         "/lib/udev/rules.d")))
+                        (find-files "./scripts" "\\.rules$"))))
+                     (add-after 'install 'glib-or-gtk-compile-schemas
+                       (assoc-ref glib-or-gtk:%standard-phases 'glib-or-gtk-compile-schemas))
+                     (add-after 'wrap 'glib-or-gtk-wrap
+                       (assoc-ref glib-or-gtk:%standard-phases 'glib-or-gtk-wrap))
+                     (add-after 'glib-or-gtk-wrap 'gi-wrap
+                       (lambda _
+                         (let ((bin (string-append #$output "/bin")))
+                           (for-each (lambda (prog)
+                                       (wrap-program prog
+                                         `("GDK_PIXBUF_MODULE_FILE" =
+                                           (,(getenv "GDK_PIXBUF_MODULE_FILE")))
+                                         `("GI_TYPELIB_PATH" =
+                                           (,(getenv "GI_TYPELIB_PATH")))))
+                                     ;; Predicate regex so we don't wrap the existing wrappers
+                                     (find-files bin "^[^.]"))))))))
+    (inputs (list
+             bash-minimal
+             eudev
+             gtk+
+             gtk-layer-shell
+             libxext
+             libxfixes
+             linux-libre-headers
+             python-evdev
+             python-ioctl-opt
+             python-libusb1
+             python-pycairo
+             python-pygobject
+             python-pylibacl
+             python-simplejson
+             python-vdf
+             zlib))
+    (native-inputs
+     (list
+      python-pytest
+      python-setuptools
+      python-setuptools-scm
+      python-wheel))
     (home-page "https://github.com/Ryochan7/sc-controller")
     (synopsis "Driver and configuration tool for game controllers")
     (description
@@ -13056,8 +13255,6 @@ Jongg tiles from the playing field by taking one matching pair at a time.")
 the Steam Controller, Steam Deck, and Dual Shock 4.  Install the included udev
 rules to solve permissions issues.")
     (license (list
-              ;; lib/enum.py, lib/usb1.py, and lib/libusb1.py are deleted but
-              ;; do have other licenses.
               license:cc0 ; images/*, default_profiles/*, profile_examples/*, default_menus/*
               license:zlib ; scripts/gamecontrollerdb.txt
               license:gpl2)))) ; everything else

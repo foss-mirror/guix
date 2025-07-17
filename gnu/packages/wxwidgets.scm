@@ -72,7 +72,7 @@
 (define-public wxwidgets
   (package
     (name "wxwidgets")
-    (version "3.2.7")
+    (version "3.2.8.1")
     (source
      (origin
        (method url-fetch)
@@ -80,7 +80,7 @@
                            "releases/download/v" version
                            "/wxWidgets-" version ".tar.bz2"))
        (sha256
-        (base32 "1ik8x3708c8wg6agfb3qj0lb1yp097gp4avlkqfcv4adhwpp58b9"))
+        (base32 "0mnpnwndkw9f6xvjyq4sv6sxfv1h3b9c7lwsm2kg3p0mi30zc35d"))
        (modules '((guix build utils)
                   (ice-9 ftw)
                   (srfi srfi-26)))
@@ -392,7 +392,7 @@ except ImportError:
     (native-inputs
      (list pkg-config python-setuptools python-waf python-wheel))
     (propagated-inputs
-     (list python-attrdict3 python-numpy python-pillow python-six))
+     (list python-numpy python-pillow python-six))
     (home-page "https://wxpython.org/")
     (synopsis "Cross platform GUI toolkit for Python")
     (description "wxPython is a cross-platform GUI toolkit for the Python
