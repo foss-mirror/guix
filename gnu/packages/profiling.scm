@@ -363,16 +363,12 @@ different kinds of performance behavior.")
            ,(string-append "--with-backend-zlib="
              (assoc-ref %build-inputs "zlib") "/lib"))))
      (home-page "https://www.scalasca.org/software/cube-4.x/download.html")
-    (synopsis "Performance report explorer for parallel programs")
+    (synopsis "CUBE high performance C writer library")
     (description
      "CUBE (CUBE Uniform Behavioral Encoding) is a tool to display a variety
 of performance metrics for parallel programs including MPI and OpenMP
 applications.  CUBE allows interactive exploration of a multidimensional
-performance space in a scalable fashion.  Scalability is achieved in two ways:
-hierarchical decomposition of individual dimensions and aggregation across
-different dimensions.  All performance metrics are uniformly accommodated in
-the same display and thus provide the ability to easily compare the effects of
-different kinds of performance behavior. CubeW is the high performance C Writer
+performance space in a scalable fashion.  CubeW is the high performance C writer
 library of the CUBE project.")
     (license license:bsd-3)))
 
@@ -403,16 +399,12 @@ library of the CUBE project.")
       #:parallel-tests? #f
     ))
     (home-page "https://www.scalasca.org/software/cube-4.x/download.html")
-    (synopsis "Performance report explorer for parallel programs")
+    (synopsis "CUBE C++ profile library")
     (description
      "CUBE (CUBE Uniform Behavioral Encoding) is a tool to display a variety
 of performance metrics for parallel programs including MPI and OpenMP
 applications.  CUBE allows interactive exploration of a multidimensional
-performance space in a scalable fashion.  Scalability is achieved in two ways:
-hierarchical decomposition of individual dimensions and aggregation across
-different dimensions.  All performance metrics are uniformly accommodated in
-the same display and thus provide the ability to easily compare the effects of
-different kinds of performance behavior. CubeLib is the general purpose C++
+performance space in a scalable fashion.  CubeLib is the general purpose C++
 library and tool of the CUBE project.")
     (license license:bsd-3)))
 
@@ -442,16 +434,12 @@ library and tool of the CUBE project.")
          ,(string-append "LDFLAGS=-L"
            (assoc-ref %build-inputs "dbus") "/lib"))))
     (home-page "https://www.scalasca.org/software/cube-4.x/download.html")
-    (synopsis "Performance report explorer for parallel programs")
+    (synopsis "CUBE profile explorer GUI")
     (description
      "CUBE (CUBE Uniform Behavioral Encoding) is a tool to display a variety
 of performance metrics for parallel programs including MPI and OpenMP
 applications.  CUBE allows interactive exploration of a multidimensional
-performance space in a scalable fashion.  Scalability is achieved in two ways:
-hierarchical decomposition of individual dimensions and aggregation across
-different dimensions.  All performance metrics are uniformly accommodated in
-the same display and thus provide the ability to easily compare the effects of
-different kinds of performance behavior. CubeGUI is the graphical explorer of
+performance space in a scalable fashion.  CubeGUI is the graphical explorer of
 the CUBE project.")
     (license license:bsd-3)))
 
