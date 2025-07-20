@@ -30,6 +30,7 @@
 ;;; Copyright © 2024 Artyom V. Poptsov <poptsov.artyom@gmail.com>
 ;;; Copyright © 2024 Aaron Covrig <aaron.covrig.us@ieee.org>
 ;;; Copyright © 2025 Jussi Timperi <jussi.timperi@iki.fi>
+;;; Copyright © 2024 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -780,15 +781,16 @@ by using the poppler rendering engine.")
 (define-public zathura
   (package
     (name "zathura")
-    (version "0.5.6")
+    (version "0.5.12")
     (source (origin
-              (method url-fetch)
-              (uri
-               (string-append "https://pwmt.org/projects/zathura/download/zathura-"
-                              version ".tar.xz"))
+              (method git-fetch)
+              (uri (git-reference
+                     (url "https://github.com/pwmt/zathura.git/")
+                     (commit version)))
+              (file-name (git-file-name name version))
               (sha256
                (base32
-                "1nhhdww8z6i2cmj7n6qjgyh49dy4jf0xq4j13djpvrfchxgf6y5l"))))
+                "1wrr9vr0d83kawkg0wj4i91g293cbjgyhmfspf4bxbs62x77zb9m"))))
     (build-system meson-build-system)
     (arguments
      (list
@@ -847,6 +849,7 @@ interaction.")
                     (url "https://github.com/podofo/podofo")
                     (commit version)))
               (file-name (git-file-name name version))
+              (patches (search-patches "podofo-gcc-14.patch"))
               (sha256
                (base32
                 "1fyv0zbl6zs93wy0qb3mjkfm99pgz5275nkzss115ww2w04h0ssl"))))
@@ -1142,6 +1145,23 @@ enhance the quality of scanned pages before performing
         (base32
          "09i88v3wacmx7f96dmq0l3afpyv95lh6jrx16xzm0jd1szdrhn5j"))))
     (build-system gnu-build-system)
+    (arguments
+     (list
+      #:make-flags
+      #~(list (string-append "CFLAGS=-g -O2 "
+                             ;; Placate gcc@14 strictness.
+                             "-Wno-error=deprecated-declarations "
+                             "-Wno-error=implicit-function-declaration"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'fix-includes
+            ;; Inclusion of unistd.h is conditional on HAVE_UNISTD_H being
+            ;; defined, but this comes from config.h.
+            (lambda _
+              (with-fluids ((%default-port-encoding "ISO-8859-1"))
+                (substitute* "src/ttsubset/sft.h"
+                  (("#include <sys/types.h>")
+                   "#include \"config.h\"\n#include <sys/types.h>"))))))))
     (inputs
      (list gtk+-2 pango poppler glib libgnomecanvas))
     (native-inputs

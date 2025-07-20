@@ -14,7 +14,7 @@
 ;;; Copyright © 2016, 2017 Nikita <nikita@n0.is>
 ;;; Copyright © 2016, 2017, 2018 Roel Janssen <roel@gnu.org>
 ;;; Copyright © 2016 David Craven <david@craven.ch>
-;;; Copyright © 2016 Jan Nieuwenhuizen <janneke@gnu.org>
+;;; Copyright © 2016, 2024, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;; Copyright © 2016 Andy Patterson <ajpatter@uwaterloo.ca>
 ;;; Copyright © 2016 Danny Milosavljevic <dannym+a@scratchpost.org>
 ;;; Copyright © 2016-2022 Marius Bakke <marius@gnu.org>
@@ -308,9 +308,9 @@ ElasticSearch server")
 (define-public firebird
   (package
     (name "firebird")
-    (version "3.0.10")
+    (version "3.0.12")
     (source
-     (let ((revision "33601-0"))
+     (let ((revision "33787-0"))
        (origin
          (method url-fetch)
          (uri (string-append "https://github.com/FirebirdSQL/"
@@ -318,7 +318,7 @@ ElasticSearch server")
                              version "/"
                              "Firebird-" version "." revision ".tar.bz2"))
          (sha256
-          (base32 "0h033xj1kxwgvdv4ncm6kk0mqybvvn203gf88xcv3avys9hbnf4i"))
+          (base32 "07w109k237slwyhgyxma9r5my0dkvksc7ykpw0a4h7gpv06vzcl5"))
          (patches (search-patches "firebird-riscv64-support-pt1.patch"
                                   "firebird-riscv64-support-pt2.patch"))
          (modules '((guix build utils)))
@@ -450,7 +450,7 @@ ElasticSearch server")
     (inputs
      (list boost
            editline
-           icu4c
+           icu4c-71
            libtommath
            ncurses
            zlib))
@@ -1070,7 +1070,7 @@ Language.")
 (define-public mariadb
   (package
     (name "mariadb")
-    (version "10.10.2")
+    (version "10.11.10")
     (source (origin
               (method url-fetch)
               (uri (string-append "https://downloads.mariadb.com/MariaDB"
@@ -1078,7 +1078,7 @@ Language.")
                                   version ".tar.gz"))
               (sha256
                (base32
-                "1ciw7y08wms9g3hzhyria49r1b9n5wpbhkndazv95d925c8x1jsp"))
+                "08phlqcwcwl753zi2jv702q7b3h25d489289mflnm8c31djp8smh"))
               (modules '((guix build utils)))
               (snippet
                '(begin
@@ -1188,11 +1188,16 @@ Language.")
                       ;; <https://jira.mariadb.org/browse/MDEV-26320>.
                       "main.selectivity_no_engine"
 
-                      ;; FIXME: This test checks various table encodings and
+                      ;; FIXME: These tests check various table encodings and
                       ;; fails because Guix defaults to UTF8 instead of the
                       ;; upstream default latin1_swedish_ci.  It's not easily
                       ;; substitutable because several encodings are tested.
                       "main.system_mysql_db"
+                      "main.mysqldump-header"
+
+                      ;; These test sometimes fail.
+                      "main.log_slow"
+                      "main.mysqld--help-aria"
 
                       ;; XXX: This test occasionally fails on i686-linux:
                       ;; <https://jira.mariadb.org/browse/MDEV-24458>
@@ -1905,7 +1910,11 @@ organized in a hash table or B+ tree.")
            #~(list "--disable-static"
                    (string-append "--with-bash-headers="
                                   (search-input-directory %build-inputs
-                                                          "include/bash")))
+                                                          "include/bash"))
+                   ;; Add CFLAGS to relax gcc-14's strictness.
+                   (string-append "CFLAGS=-g -O2"
+                                  " -Wno-error=implicit-function-declaration"
+                                  " -Wno-error=incompatible-pointer-types"))
            #:phases
            #~(modify-phases %standard-phases
                (add-after 'install 'symlink-bash-loadables
@@ -2224,14 +2233,14 @@ changes.")
 (define-public tdb
   (package
     (name "tdb")
-    (version "1.4.7")
+    (version "1.4.12")
     (source (origin
               (method url-fetch)
               (uri (string-append "https://www.samba.org/ftp/tdb/tdb-"
                                   version ".tar.gz"))
               (sha256
                (base32
-                "03n2hz4sv003gpkyp57hk5kiw4xk9f2dkxq75kzk2gskxy6idyx4"))))
+                "0yndhh829ai2p3n4i63h1rhl22dcvzba0rffgqihjbc1k1sb5r3c"))))
     (build-system gnu-build-system)
     (arguments
      '(#:phases
@@ -2621,21 +2630,28 @@ automatically set update and create date and time based fields in a table.")
         (base32 "0y4djb048i09dk19av7mzfb3khr72vw11p3ayw2p82jsy4gm8j2g"))))
     (build-system perl-build-system)
     (arguments
-     `(#:phases
-       (modify-phases %standard-phases
-         (add-before 'configure 'skip-library-detection
-           ;; Avoid dependencies on perl-devel-checklib, openssl, and zlib.  They
-           ;; are really only needed for the test suite; their absence does not
-           ;; affect the build or the end result.
-           (lambda _
-             (substitute* "Makefile.PL"
-               (("use Devel::CheckLib;" match)
-                (string-append "# " match))
-               (("assert_lib")
-                "print"))
-             #t)))
-       ;; Tests require running MySQL server.
-       #:tests? #f))
+      (list
+        ;; Tests require running MySQL server.
+        #:tests? #f
+        #:phases
+        #~(modify-phases %standard-phases
+          (add-after 'configure 'add-cflags
+            (lambda _
+              (substitute* "Makefile"
+                (("OPTIMIZE = -O2")
+                 (string-append "OPTIMIZE = -O2 "
+                                "-Wno-error=incompatible-pointer-types "
+                                "-Wno-error=implicit-function-declaration")))))
+          (add-before 'configure 'skip-library-detection
+            ;; Avoid dependencies on perl-devel-checklib, openssl, and zlib.  They
+            ;; are really only needed for the test suite; their absence does not
+            ;; affect the build or the end result.
+            (lambda _
+              (substitute* "Makefile.PL"
+                (("use Devel::CheckLib;" match)
+                 (string-append "# " match))
+                (("assert_lib")
+                 "print")))))))
     (propagated-inputs
      `(("perl-dbi" ,perl-dbi)
        ("mysql" ,mariadb "lib")

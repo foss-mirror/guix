@@ -22,7 +22,7 @@
 ;;; Copyright © 2017, 2019, 2022 Arun Isaac <arunisaac@systemreboot.net>
 ;;; Copyright © 2017–2021 Tobias Geerinckx-Rice <me@tobias.gr>
 ;;; Copyright © 2017 Dave Love <me@fx@gnu.org>
-;;; Copyright © 2018, 2019, 2020, 2021, 2022, 2024 Janneke Nieuwenhuizen <janneke@gnu.org>
+;;; Copyright © 2018, 2019, 2020, 2021, 2022, 2024, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;; Copyright © 2018 Joshua Sierles, Nextjournal <joshua@nextjournal.com>
 ;;; Copyright © 2018 Nadya Voronova <voronovank@gmail.com>
 ;;; Copyright © 2018 Adam Massmann <massmannak@gmail.com>
@@ -722,12 +722,16 @@ precision floating point numbers.")
                     ;; There are rounding issues with these tests on i686:
                     ;; https://lists.gnu.org/archive/html/bug-gsl/2016-10/msg00000.html
                     ;; https://lists.gnu.org/archive/html/bug-gsl/2020-04/msg00000.html
+                    ;; https://codeberg.org/guix/guix/issues/1234#issuecomment-5874172
                     #~((add-before 'check 'disable-failing-tests
                          (lambda _
                            (substitute* "spmatrix/test.c"
                              ((".*test_all.*") "\n")
                              ((".*test_float.*") "\n")
                              ((".*test_complex.*") "\n"))
+
+                           (substitute* "specfunc/test_legendre.c"
+                             ((".*= test_legendre_schmidt.*") "\n"))
 
                            ;; XXX: These tests abort with:
                            ;; gsl: cholesky.c:645: ERROR: matrix is not positive definite
@@ -1795,9 +1799,11 @@ incompatible with HDF5.")
                            "--enable-threadsafe"
                            "--with-pthread"
                            "--enable-unsupported")
-       ;; Use -fPIC to allow the R bindings to link with the static libraries
-       #:make-flags (list "CFLAGS=-fPIC"
-                          "CXXFLAGS=-fPIC")
+       ;; Use -fPIC to allow the R bindings to link with the static libraries.
+       ;; Declare warnings as non-errors to fix build with gcc@14
+       #:make-flags
+       (list "CFLAGS=-g -O2 -fPIC -Wno-error=incompatible-pointer-types"
+             "CXXFLAGS=-g -O2 -fPIC")
        #:phases
        (modify-phases %standard-phases
          (add-before 'configure 'patch-configure
@@ -2445,7 +2451,8 @@ similar to MATLAB, GNU Octave or SciPy.")
            zlib))
     (arguments
      (list #:configure-flags
-           #~'("--enable-doxygen" "--enable-dot"
+           #~'("CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types"
+               "--enable-doxygen" "--enable-dot"
                "--enable-hdf4" "--disable-dap-remote-tests")
 
            #:phases
@@ -3526,7 +3533,8 @@ script files.")
        ;; freeimage version 3.17 library leads to 'undefined
        ;; reference' errors.
        #:configure-flags
-        (list "-DUSE_FREEIMAGE:BOOL=OFF"
+        (list "-DCMAKE_CXX_FLAGS=-fpermissive" ;from unsigned char* to char*
+              "-DUSE_FREEIMAGE:BOOL=OFF"
               "-DUSE_TBB:BOOL=ON"
               "-DUSE_VTK:BOOL=OFF"
               "-DBUILD_DOC_Overview:BOOL=OFF"
@@ -6180,7 +6188,7 @@ access to BLIS implementations via traditional BLAS routine calls.")
 (define-public openlibm
   (package
     (name "openlibm")
-    (version "0.8.1")
+    (version "0.8.7")
     (source
      (origin
        (method git-fetch)
@@ -6189,7 +6197,7 @@ access to BLIS implementations via traditional BLAS routine calls.")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "1xsrcr49z0wdqpwd98jmw2xh18myzsa9xman0kp1h2i89x8mic5b"))))
+        (base32 "0lgylmspyhsndfxzya9bymyz7vnah3197jylr497jgbm4b62q8bx"))))
     (build-system gnu-build-system)
     (arguments
      `(#:make-flags
@@ -7355,6 +7363,11 @@ specifications.")
        #:phases
        (modify-phases %standard-phases
          (delete 'configure)            ; no configure script
+         (add-after 'unpack 'apply-gcc-14-patch
+           (lambda _
+             (substitute* '("lpsolve55/ccc"
+                            "lp_solve/ccc")
+               (("^c=gcc") "c=\"gcc -Wno-error=implicit-int\""))))
          (replace 'build
            (lambda _
              (with-directory-excursion "lpsolve55"
@@ -10891,6 +10904,13 @@ computation is supported via MPI.")
                       "modules/scicos/src/translator/makefile.mak"
                       "modules/scicos/src/modelica_compiler/makefile.mak")
                   (("nums\\.cmx?a") ""))))
+            ;; See https://gitlab.com/scilab/scilab/-/issues/17462
+            (add-after 'unpack 'fix-call-scilab-examples
+              (lambda _
+                (substitute*
+                    (find-files "modules/call_scilab/examples" "\\.c$")
+                  (("StartScilab\\((.*), NULL\\)" all args)
+                   (string-append "StartScilab(" args ", 0)")))))
             (add-after 'unpack 'fix-linking
               (lambda _
                 (substitute* "modules/Makefile.am"

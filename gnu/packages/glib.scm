@@ -14,7 +14,7 @@
 ;;; Copyright © 2019, 2020, 2021 Marius Bakke <marius@gnu.org>
 ;;; Copyright © 2020 Nicolò Balzarotti <nicolo@nixo.xyz>
 ;;; Copyright © 2020 Florian Pelz <pelzflorian@pelzflorian.de>
-;;; Copyright © 2020, 2023 Janneke Nieuwenhuizen <janneke@gnu.org>
+;;; Copyright © 2020, 2023, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;; Copyright © 2020 Arthur Margerit <ruhtra.mar@gmail.com>
 ;;; Copyright © 2021 Maxime Devos <maximedevos@telenet.be>
 ;;; Copyright © 2022 Petr Hodina <phodina@protonmail.com>
@@ -246,7 +246,7 @@ information, refer to the @samp{dbus-daemon(1)} man page.")))
 (define glib-minimal
   (package
     (name "glib")
-    (version "2.82.1")
+    (version "2.83.3")
     (source
      (origin
        (method url-fetch)
@@ -255,7 +255,7 @@ information, refer to the @samp{dbus-daemon(1)} man page.")))
                        name "/" (string-take version 4) "/"
                        name "-" version ".tar.xz"))
        (sha256
-        (base32 "19l98kdv6d4363minliw0imvxh4qfdw5im988knf8bpm1d2391j7"))
+        (base32 "139jpar5f5qjxkf3knvqq1kgdxgsrxqqmybw4yaaagrfpcc57inh"))
        (patches
         (search-patches "glib-appinfo-watch.patch"
                         "glib-skip-failing-test.patch"))
@@ -333,7 +333,7 @@ information, refer to the @samp{dbus-daemon(1)} man page.")))
                      ;; assertion failed (last_thread_id <= thread_id): (3 <= 2)
                      #~((substitute* "glib/tests/thread-pool-slow.c"
                           (("^   g_assert_cmpint \\(last_thread_id.*" all)
-                          (string-append "//" all "\n"))))
+                           (string-append "//" all "\n"))))
                      #~())
               #$@(if (system-hurd?)
                      '((with-directory-excursion "gio/tests"
@@ -480,7 +480,9 @@ information, refer to the @samp{dbus-daemon(1)} man page.")))
               ;; outputs.
               (substitute*
                   (list (search-input-file outputs "lib/pkgconfig/gio-2.0.pc")
-                        (search-input-file outputs "lib/pkgconfig/glib-2.0.pc"))
+                        (search-input-file outputs "lib/pkgconfig/glib-2.0.pc")
+                        (search-input-file outputs
+                                           "lib/pkgconfig/girepository-2.0.pc"))
                 (("^bindir=.*")
                  "")
                 (("=\\$\\{bindir\\}/")
@@ -838,7 +840,7 @@ by GDBus included in Glib.")
 (define-public libaccounts-glib
   (package
     (name "libaccounts-glib")
-    (version "1.26")
+    (version "1.27")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -847,7 +849,7 @@ by GDBus included in Glib.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1fdvvzbz23q5c0jnzryinkmcymd0zcs2pdn4fvibg34pvybb4li9"))))
+                "0j181yw0jpw3bkq45hg0vhha5nyjjcssvfjj0y92311bkz15rf4q"))))
     (build-system meson-build-system)
     (native-inputs (list dbus
                          `(,glib "bin")
@@ -1150,7 +1152,7 @@ libraries.  Examples include gtk+, webkit, libsoup and many more.")
     (version "0.24.2")
     (source
      (origin
-      (method url-fetch)
+       (method url-fetch)
        (uri
         (string-append
          "https://telepathy.freedesktop.org/releases/telepathy-glib/"
@@ -1161,17 +1163,34 @@ libraries.  Examples include gtk+, webkit, libsoup and many more.")
          "1w3kja8j3gz2apal79bi3hq44xk5g78aphrqbw983l6df7bp98xh"))))
     (build-system gnu-build-system)
     (arguments
-     '(#:configure-flags '("--enable-vala-bindings")
-       #:phases
-       (modify-phases %standard-phases
-         (add-after 'unpack 'disable-failing-tests
-           (lambda _
-             ;; None of the tests below are able to find the org.gtk.vfs.Daemon
-             ;; service file provided by gvfs.
-             (substitute* "tests/dbus/Makefile.in"
-               (("test-contacts\\$\\(EXEEXT\\)") "")
-               (("test-file-transfer-channel\\$\\(EXEEXT\\)") "")
-               (("test-stream-tube\\$\\(EXEEXT\\)") "")))))))
+     (list
+      #:configure-flags
+      #~(list
+         "CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types"
+         "--enable-vala-bindings")
+
+      ;; '../tools/glib-*.py' generate files but the target dependencies are
+      ;; (presumably) not fully specified in the makefile, leading to
+      ;; parallel build errors like:
+      ;;
+      ;;   EOFError: EOF read where object expected
+      ;;   make[2]: *** [Makefile:1906: _gen/register-dbus-glib-marshallers-body.h] Error 1
+      #:parallel-build? #f
+      ;; When spawned in parallel, the dbus daemons may fail to shut down
+      ;; cleanly.  This issue appears to have been closed upstream due to low
+      ;; information, but still continues to haunt folks.  See also
+      ;; <https://gitlab.freedesktop.org/telepathy/telepathy-glib/-/issues/134>.
+      #:parallel-tests? #f
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'disable-failing-tests
+            (lambda _
+              ;; None of the tests below are able to find the org.gtk.vfs.Daemon
+              ;; service file provided by gvfs.
+              (substitute* "tests/dbus/Makefile.in"
+                (("test-contacts\\$\\(EXEEXT\\)") "")
+                (("test-file-transfer-channel\\$\\(EXEEXT\\)") "")
+                (("test-stream-tube\\$\\(EXEEXT\\)") "")))))))
     (native-inputs
      (list `(,glib "bin") ; uses glib-mkenums
            gobject-introspection

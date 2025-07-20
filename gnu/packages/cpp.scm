@@ -46,6 +46,7 @@
 ;;; Copyright © 2025 Sergio Pastor Pérez <sergio.pastorperez@gmail.com>
 ;;; Copyright © 2025 Ashish SHUKLA <ashish.is@lostca.se>
 ;;; Copyright © 2025 Nicolas Graves <ngraves@ngraves.fr>
+;;; Copyright © 2024, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -2451,30 +2452,33 @@ provides a number of utilities to make coding with expected cleaner.")
     (license license:cc0)))
 
 (define-public immer
-  (package
-   (name "immer")
-   (version "0.8.1")
-   (source (origin
-            (method git-fetch)
-            (uri (git-reference
-                  (url "https://github.com/arximboldi/immer")
-                  (commit (string-append "v" version))))
-            (file-name (git-file-name name version))
-            (sha256
-             (base32 "03qkr42h0g6rivj3kq207gzgnv7hq88y69q16l2vg1lbvjcgca2g"))))
-   (build-system cmake-build-system)
-   (arguments (list #:test-target "check"
-                    ;; -Werror appears to report false positives.
-                    ;; See <https://github.com/arximboldi/immer/issues/223>.
-                    #:configure-flags #~(list "-DDISABLE_WERROR=ON")))
-   (inputs (list boost libgc c-rrb))
-   (native-inputs (list catch2 doctest fmt pkg-config))
-   (home-page "https://sinusoid.es/immer")
-   (synopsis "Immutable data structures")
-   (description "Immer is a library of persistent and immutable data structures
+  ;; Use latest commit to fix build with gcc 14.
+  (let ((commit "df6ef46d97e1fe81f397015b9aeb32505cef653b")
+        (revision "0"))
+    (package
+      (name "immer")
+      (version (git-version "0.8.1" revision commit))
+      (source (origin
+                (method git-fetch)
+                (uri (git-reference
+                       (url "https://github.com/arximboldi/immer")
+                       (commit commit)))
+                (file-name (git-file-name name version))
+                (sha256
+                 (base32 "032rb84ahvdnc1m6sj4lflrwnk4p1f2jsq1pv03xbgizp2lr2pkx"))))
+      (build-system cmake-build-system)
+      (arguments (list #:test-target "check"
+                       ;; -Werror appears to report false positives.
+                       ;; See <https://github.com/arximboldi/immer/issues/223>.
+                       #:configure-flags #~(list "-DDISABLE_WERROR=ON")))
+      (inputs (list boost libgc c-rrb))
+      (native-inputs (list catch2-3 doctest fmt pkg-config))
+      (home-page "https://sinusoid.es/immer")
+      (synopsis "Immutable data structures")
+      (description "Immer is a library of persistent and immutable data structures
 written in C++.")
-   (properties '((lint-hidden-cpe-vendors . ("immer_project"))))
-   (license license:boost1.0)))
+      (properties '((lint-hidden-cpe-vendors . ("immer_project"))))
+      (license license:boost1.0))))
 
 (define-public zug
   (package
@@ -2607,7 +2611,12 @@ conversions to and from strings, iteration and related functionality.")
                 "0r48rfghjm90pkdyr4khxg783g9v98rdx2n69xn8f6c5i0hl96rv"))))
     (build-system gnu-build-system)
     (arguments
-     (list #:configure-flags #~(list "--enable-mcpplib" "--disable-static")))
+     (list #:configure-flags
+           #~(list "--enable-mcpplib"
+                   "--disable-static"
+                   (string-append "CFLAGS=-g -O2"
+                                  " -Wno-error=incompatible-pointer-types"
+                                  " -Wno-error=implicit-function-declaration"))))
     (home-page "https://mcpp.sourceforge.net/")
     (synopsis "C/C++ preprocessor")
     (description
@@ -3868,7 +3877,7 @@ std::variant (formerly boost::variant) for C++11/14.")
                 ((".*3rdparty/googletest.*\n") "")
                 ((".*config_compiler_and_linker.*\n") "")
                 (("gtest_main") "gtest gtest_main")))))))
-    (native-inputs (list googletest gcc-12)) ; XXX: build fails with GCC 11
+    (native-inputs (list googletest))
     (home-page "https://github.com/mpark/variant")
     (synopsis "Implementation of std::variant for C++11/14/17")
     (description
@@ -3966,7 +3975,8 @@ for C++17 string-view.")
                (commit commit)))
          (file-name (git-file-name name version))
          (sha256
-          (base32 "0m344qq3d57balzvc26fjx985nj2xwnfb1a7prkv3njj5lfcf127"))))
+          (base32 "0m344qq3d57balzvc26fjx985nj2xwnfb1a7prkv3njj5lfcf127"))
+         (patches (search-patches "strutcpp-fix-includes.patch"))))
       (build-system cmake-build-system)
       (arguments
        (list

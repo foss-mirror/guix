@@ -514,7 +514,7 @@ total number of shares generated.")
     (inputs
      (list argon2
            bash-minimal
-           cryptsetup
+           cryptsetup-minimal
            e2fsprogs        ; for mkfs.ext4
            gettext-minimal  ; used at runtime
            gnupg
@@ -1636,7 +1636,7 @@ checksum tool based on the BLAKE3 cryptographic hash function.")
 (define-public libxcrypt
   (package
     (name "libxcrypt")
-    (version "4.4.36")
+    (version "4.4.38")
     (source
      (origin
        (method url-fetch)
@@ -1645,22 +1645,12 @@ checksum tool based on the BLAKE3 cryptographic hash function.")
          "https://github.com/besser82/libxcrypt/releases/download/v" version
          "/libxcrypt-" version ".tar.xz"))
        (sha256
-        (base32 "0hw9zphnbzgys5k7ja37iqmwmlyn0y417qr6xqmdw08axv5g9qg5"))))
+        (base32 "1mkd42s12iagnpqk29hqi5vk2a6vkdaagn81gwr9k9vf62f4nc40"))))
     (build-system gnu-build-system)
     (native-inputs
      (list perl))
     (arguments
      (cond
-       ((target-hurd64?)
-        (list
-          #:phases
-          #~(modify-phases %standard-phases
-              (add-after 'unpack 'apply-hurd64-patch
-                (lambda _
-                  (let ((patch
-                         #$(local-file
-                            (search-patch "libxcrypt-hurd64.patch"))))
-                    (invoke "patch" "--force" "-p1" "-i" patch)))))))
        ((target-ppc32?)
         (list #:tests? #f))     ; TODO: Investigate test failures.
        ((target-mingw?)

@@ -18,6 +18,7 @@
 ;;; Copyright © 2024 Julian Flake <flake@uni-koblenz.de>
 ;;; Copyright © 2025 Yovan Naumovski <yovan@gorski.stream>
 ;;; Copyright © 2025 André Batista <nandre@riseup.net>
+;;; Copyright © 2024, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -91,7 +92,13 @@
               (base32
                "0fr21a7vprdyy1bq6s99m0x420c9jm5fipsd63pqv8qyfkhhxkim"))))
     (build-system gnu-build-system)
-    (arguments '(#:tests? #f))      ; tests rely on access to external servers
+    (arguments
+     (list
+      #:tests? #f                    ;tests rely on access to external servers
+      #:configure-flags #~(list
+                           #$(string-append
+                              "CFLAGS=-g -O2"
+                              " -Wno-error=incompatible-pointer-types"))))
     (home-page "https://libcddb.sourceforge.net/")
     (synopsis "C library to access data on a CDDB server")
     (description
@@ -123,6 +130,10 @@ caching facility provided by the library.")
               (base32
                "0avi6apv5ydjy6b9c3z9a46rvp5i57qyr09vr7x4nndxkmcfjl45"))))
     (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
     (inputs
      (list ncurses libcddb))
     (native-inputs
@@ -399,6 +410,14 @@ format, commonly used for VCDs or disks with subchannel data.")
     (arguments
      (list #:make-flags
         #~(list "RM=rm" "LN=ln" "SYMLINK=ln -s"
+                (string-append
+                  "CFLAGS="
+                  ;; The following are needed to placate gcc@14.
+                  "-Wno-error=implicit-int "
+                  "-Wno-error=implicit-function-declaration "
+                  ;; The following is probably there when CFLAGS are not
+                  ;; defined, but needs to be set explicitly now.
+                  "-g -O2 -fPIC")
                 "CONFIG_SHELL=sh"
                 (string-append "CCOM=" #$(cc-for-target))
                 "LINKMODE=dynamic"
@@ -504,6 +523,13 @@ or @command{xorrisofs} to create ISO 9660 images.")
      (list #:parallel-build? #f ; http://hydra.gnu.org/build/49331/nixlog/1/raw
            #:phases
            #~(modify-phases %standard-phases
+               (add-before 'configure 'relax-gcc-14-strictness
+                 (lambda _
+                   (setenv
+                    "CFLAGS"
+                    (string-append "-g -O2"
+                                   " -Wno-error=implicit-function-declaration"
+                                   " -Wno-error=builtin-declaration-mismatch"))))
                (replace 'check
                  (lambda _
                    (with-directory-excursion "regtest"
@@ -1039,16 +1065,17 @@ It supports read-only media (DVD/CD-R) and rewritable media that wears out
     (inputs
      (list bzip2 libcap perl zlib))
     (arguments
-     `(#:tests? #f ;no tests
-       #:phases
-       (modify-phases %standard-phases
-         (add-after 'install 'old-cdrecord
-           (lambda* (#:key outputs #:allow-other-keys)
-             (with-directory-excursion (string-append (assoc-ref outputs "out")
-                                                      "/bin")
-               (symlink "genisoimage" "mkisofs")
-               (symlink "wodim" "cdrecord"))
-             #t)))))
+     (list
+      #:tests? #f                       ;no tests
+      #:configure-flags
+      #~(list "-DCMAKE_C_FLAGS=-Wno-error=implicit-function-declaration")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'install 'old-cdrecord
+            (lambda* (#:key outputs #:allow-other-keys)
+              (with-directory-excursion (string-append #$output "/bin")
+                (symlink "genisoimage" "mkisofs")
+                (symlink "wodim" "cdrecord")))))))
     (home-page "https://repo.parabola.nu/other/cdrkit-libre/")
     (synopsis "Command-line CD/DVD recorder")
     (description "Cdrkit is a suite of programs for recording CDs and DVDs,

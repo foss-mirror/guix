@@ -9,7 +9,7 @@
 ;;; Copyright © 2016, 2017, 2021 Alex Kost <alezost@gmail.com>
 ;;; Copyright © 2016, 2017 Adonay "adfeno" Felipe Nogueira <https://libreplanet.org/wiki/User:Adfeno> <adfeno@openmailbox.org>
 ;;; Copyright © 2016, 2021 Amirouche <amirouche@hypermove.net>
-;;; Copyright © 2016, 2019, 2021, 2023, 2024 Janneke Nieuwenhuizen <janneke@gnu.org>
+;;; Copyright © 2016, 2019, 2021, 2023, 2024, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;; Copyright © 2017 Andy Wingo <wingo@igalia.com>
 ;;; Copyright © 2017 David Thompson <davet@gnu.org>
 ;;; Copyright © 2017, 2018, 2019, 2020 Mathieu Othacehe <m.othacehe@gmail.com>
@@ -4467,7 +4467,8 @@ list of components.  This module takes care of that for you.")
                 "019mbhgyga57k2074kg97mh3qsa8ny9l0kjgqids8cg3c6vbjdby"))))
     (build-system glib-or-gtk-build-system)
     (arguments
-     `(#:configure-flags '("--with-gnu-filesystem-hierarchy")
+     `(#:configure-flags '("CFLAGS=-Wno-error=incompatible-pointer-types"
+                           "--with-gnu-filesystem-hierarchy")
        #:modules ((guix build glib-or-gtk-build-system)
                   (guix build utils)
                   (ice-9 popen)
@@ -4805,7 +4806,7 @@ denote the invalidity of certain code paths in a Scheme program.")
      (origin
        (method git-fetch)
        (uri (git-reference
-             (url "https://inqlab.net/git/guile-srfi-146.git")
+             (url "https://codeberg.org/pukkamustard/guile-srfi-146")
              (commit (string-append "v" version))))
        (sha256
         (base32
@@ -4829,7 +4830,7 @@ keys and another using a hash function on the keys.  The
 datastructures and procedures are by default purely-functional.  This
 package re-uses the SRFI sample implementation that is based on
 red-black trees and Hash Array Mapped Trie (HAMT).")
-    (home-page "https://inqlab.net/git/guile-srfi-146.git")
+    (home-page "https://codeberg.org/pukkamustard/guile-srfi-146")
     (license
      (list license:lgpl3+
            ;; contains ISC code from the SRFI sample implementation

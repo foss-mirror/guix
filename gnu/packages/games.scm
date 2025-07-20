@@ -1287,7 +1287,7 @@ high a score as possible.")
     (outputs '("out"
                "tiles"))                ;for tile graphics and sound support
     (native-inputs
-     (list astyle gettext-minimal pkg-config))
+     (list astyle gcc-13 gettext-minimal pkg-config))
     (inputs
      (list freetype
            libogg
@@ -6902,7 +6902,13 @@ with the \"Stamp\" tool within Tux Paint.")
              (base32
               "1xkr3ka2sxp5s0spp84iv294i29s1vxqzazb6kmjc0n415h0x57p"))
             (patches
-             (search-patches "supertux-unbundle-squirrel.patch"))))
+             (search-patches "supertux-unbundle-squirrel.patch"))
+            (modules '((guix build utils)))
+            (snippet
+             #~(substitute* "external/partio_zip/zip_manager.hpp"
+                            (("^#include <vector>" include-vector)
+                             (string-append "#include <memory>\n"
+                                            include-vector))))))
    (arguments
     '(#:tests? #f
       #:configure-flags '("-DINSTALL_SUBDIR_BIN=bin"
@@ -10151,7 +10157,10 @@ via the in-game download manager.")
            (substitute* "extern/CMakeLists.txt"
              (("include\\(CMakeProject-png.cmake\\)") ""))
            (delete-file-recursively "extern/libpng")
-           #t))))
+           ;; Include missing <ctime> header.
+           (substitute* "src/arch/ArchHooks/ArchHooks.h"
+             (("#define ARCH_HOOKS_H" all)
+              (string-append all "\n#include <ctime> // struct tm")))))))
     (build-system cmake-build-system)
     (arguments
      `(#:tests? #f                      ;FIXME: couldn't find how to run tests
@@ -11241,7 +11250,7 @@ play with up to four players simultaneously.  It has network support.")
            (sdl-union
             (list sdl2 sdl2-mixer sdl2-net sdl2-ttf sdl2-image))))
     (native-inputs
-     (list clang-9 ghc pkg-config qttools-5))
+     (list clang ghc pkg-config qttools-5))
     (home-page "https://hedgewars.org/")
     (synopsis "Turn-based artillery game featuring fighting hedgehogs")
     (description

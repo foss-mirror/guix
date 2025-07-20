@@ -5994,7 +5994,7 @@ be regarded as @code{emacs-company-quickhelp} for @code{emacs-corfu}.")
 (define-public emacs-cape
   (package
     (name "emacs-cape")
-    (version "2.0")
+    (version "2.1")
     (source
      (origin
        (method git-fetch)
@@ -6003,10 +6003,11 @@ be regarded as @code{emacs-company-quickhelp} for @code{emacs-corfu}.")
              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0wm0y982zrfzzbdizpvr39c55bhp9y7l7w1sp8ps1b4ijbmgd0r9"))))
+        (base32 "0jdlk2i4mksp7dh71hvz93125z9y1vrfq78jiazzmwyimnawq5zh"))))
     (build-system emacs-build-system)
     (arguments
      (list
+      #:tests? #f                       ;no test suite
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'makeinfo
@@ -30451,6 +30452,40 @@ be changed by customizing the appropriate variables.")
 calendar.")
       (license license:gpl3+))))
 
+(define-public emacs-zotra
+  ;; No releases or tags.
+  (let ((commit "fe9093b226a1678fc6c2fadd31a09d5a22ecdcf1")
+        (revision "0"))
+    (package
+      (name "emacs-zotra")
+      (version (git-version "1.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+                (url "https://github.com/mpedramfar/zotra/")
+                (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32
+           "04a7h183kbl8nfkhn2386yljmv7hgxg0cdyw1ir3x60i3nji179z"))))
+      (build-system emacs-build-system)
+      (arguments (list #:tests? #f))    ; no tests
+      (home-page "https://github.com/mpedramfar/zotra/")
+      (synopsis "Zotra frontend for Emacs")
+      (description
+       "@code{Emacs-zotra} provides functions to fetch bibliographic
+information in different formats (e.g. @{bibtex}) using website urls or search
+identifiers.
+
+This library connects to different @code{zotero} translators:
+@itemize
+@item citoid, using a more limited public API
+@item zotra-server, which also fetches attachments
+@item translation-server
+@end itemize\n")
+      (license license:gpl3+))))
+
 (define-public emacs-zotxt
   (package
     (name "emacs-zotxt")
@@ -39431,7 +39466,7 @@ contributed packages to Telega.")))
 (define-public emacs-doom-modeline
   (package
     (name "emacs-doom-modeline")
-    (version "4.1.0")
+    (version "4.2.0")
     (source
      (origin
        (method git-fetch)
@@ -39439,7 +39474,7 @@ contributed packages to Telega.")))
              (url "https://github.com/seagle0128/doom-modeline")
              (commit (string-append "v" version))))
        (sha256
-        (base32 "0l7yyn8yxyxbsjbs52bp9wh66wdj828scb1gjbi6pk1hrx5x8g9v"))
+        (base32 "093faiamd6lk2abk5n61i86drawqb00v319yg9vv95an6silcmmg"))
        (file-name (git-file-name name version))))
     (build-system emacs-build-system)
     (native-inputs (list emacs-ert-runner))
@@ -41464,10 +41499,10 @@ org-roam")
 using org mode; faster than org-roam.")
     (license license:gpl3+)))
 
-(define-public emacs-org-mem-0.14
+(define-public emacs-org-mem
   (package
     (name "emacs-org-mem")
-    (version "0.14.1")
+    (version "0.17.2")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -41476,7 +41511,7 @@ using org mode; faster than org-roam.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "1wvgdb0kk1236xjhpm0bxsqhbwk1fzmwzmd6h622k453k8kxhacr"))))
+                "12aqv1lay6g6vz02s0zqw4620agm0r3s5j87w16gvbawi240x096"))))
     (build-system emacs-build-system)
     (propagated-inputs
      (list emacs-el-job emacs-llama))
@@ -41489,7 +41524,7 @@ structure of all your Org files – headings, links and so on..")
 (define-public emacs-org-node-3
   (package
     (name "emacs-org-node")
-    (version "3.4.1")
+    (version "3.7.4")
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -41498,7 +41533,7 @@ structure of all your Org files – headings, links and so on..")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "05sqrf96fs9yx9fw7mwl6y2376rwxk97jd4zdh74f9w56hkf5y6p"))))
+                "1cxzdyiqan4881m7fpzxym1gkplqlyagl3bj1pwa7a5bswhld40y"))))
     (build-system emacs-build-system)
     (arguments
      '(#:tests? #f ; fails
@@ -41513,7 +41548,7 @@ structure of all your Org files – headings, links and so on..")
     (propagated-inputs
      (list emacs-llama
            emacs-magit
-           emacs-org-mem-0.14))
+           emacs-org-mem))
     ;; tests
     (native-inputs
      (list emacs-buttercup
@@ -44861,6 +44896,49 @@ TinTin++ scripting language as possible, organizing commands into functional
 categories and highlighting specific modes that many commands use to
 accomplish different tasks.")
       (license license:asl2.0))))
+
+(define-public emacs-titlecase
+  (package
+    (name "emacs-titlecase")
+    (version "0.4.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+              (url "https://github.com/duckwork/titlecase.el/")
+              (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0kpg1l0rbbwqcmlj9i8xs2dv9h6yik9wgngik5z6wdgxbkaxjln7"))))
+    (build-system emacs-build-system)
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; Disable 3/26 unexpected results.
+          (add-before 'check 'disable-error-tests
+            (lambda _
+              (emacs-batch-edit-file "tests/titlecase-tests.el"
+                '(progn
+                  (defun remove-test (test-name test-param)
+                    (save-excursion
+                     (re-search-forward
+                      (format "(ert-deftest-%s %s" test-name test-param))
+                     (goto-char (match-beginning 0))
+                     (kill-sexp)))
+                  (remove-test "decl-pair\n" "contractions_1")
+                  (remove-test "decl-geneated-ascii\n" "generated_1_chars")
+                  (remove-test "decl-nop" "nop_1")
+                  (basic-save-buffer))))))
+      #:test-command #~(list "emacs" "-Q" "--batch"
+                             "-l" "tests/titlecase-tests.el"
+                             "-f" "ert-run-tests-batch-and-exit")))
+    (home-page "https://github.com/duckwork/titlecase.el/")
+    (synopsis "Capitalise titles")
+    (description
+     "This package provides a best-effort attempt at capitalizing titles, only
+in English, with Emacs.")
+    (license license:gpl3)))
 
 (define-public emacs-x509-mode
   (let ((commit "3830cbfdadab4cd68e6f0b6a3a7a4931be8328ea")

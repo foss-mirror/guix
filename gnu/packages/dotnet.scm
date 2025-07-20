@@ -166,7 +166,10 @@ code to handle abstract syntax trees and operations upon the trees.")
                    (list #:configure-flags #~(list "--with-jit"))
                    '())
                (list #:make-flags
-                     #~(list "CFLAGS=-O2 -g -Wno-pointer-to-int-cast"))))
+                     #~(list (string-append
+                              "CFLAGS=-O2 -g -Wno-pointer-to-int-cast"
+                              " -Wno-error=implicit-function-declaration"
+                              " -Wno-error=incompatible-pointer-types")))))
       (native-search-paths
        (list (search-path-specification
               (variable "CSCC_LIB_PATH")
@@ -363,15 +366,24 @@ for use with .NET-capable runtime engines and applications.")
                            (string-append "EXTERNAL_RUNTIME="
                                           #+(this-package-native-input "pnet-git")
                                           "/bin/ilrun")
-                           "CFLAGS=-O2 -g -DARG_MAX=500"
+                           "CFLAGS=-O2 -g -DARG_MAX=500 -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=return-mismatch"
                            #$(string-append "CC=" (cc-for-target))
                            "V=1")
       ;; build fails nondeterministically without this
       #:parallel-build? #f
       #:phases
       #~(modify-phases %standard-phases
+          (add-after 'unpack 'fix-includes
+            (lambda _
+              ;; Upstream forgot to #include that.
+              (substitute* "mono/metadata/security.c"
+               (("#include <mono/metadata/image.h>")
+                "#include <mono/metadata/image.h>
+#include <mono/metadata/assembly.h>"))))
           (add-after 'unpack 'set-env
             (lambda _
+              ;; Configure script for sock_un.sun_path uses exit() without importing it.
+              (setenv "CFLAGS" "-O2 -g -DARG_MAX=500 -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=return-mismatch")
               ;; All tests under mcs/class fail trying to access $HOME
               (setenv "HOME" "/tmp")
               ;; ZIP files have "DOS time" which starts in Jan 1980.
@@ -432,7 +444,8 @@ a C-style programming language from Microsoft that is very similar to Java.")
     (arguments
      (substitute-keyword-arguments (package-arguments mono-1.2.6)
        ((#:make-flags _ #f)
-        #~(list #$(string-append "CC=" (cc-for-target))
+        #~(list "CFLAGS=-O2 -g -DARG_MAX=500 -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=return-mismatch "
+                #$(string-append "CC=" (cc-for-target))
                 "NO_SIGN_ASSEMBLY=yes" ; non-reproducible otherwise.
                 "V=1"))
        ((#:phases phases #~%standard-phases)
@@ -461,7 +474,11 @@ a C-style programming language from Microsoft that is very similar to Java.")
                 (let ((original (getenv "CFLAGS")))
                   (setenv "CFLAGS" (string-append (or original "")
                                                   (if original " " "")
-                                                  "-DARG_MAX=500")))))
+                                                  "-DARG_MAX=500 "
+                                                  "-Wno-error=implicit-function-declaration "
+                                                  "-Wno-error=incompatible-pointer-types "
+                                                  "-Wno-error=implicit-int "
+                                                  "-Wno-error=return-mismatch ")))))
             (add-before 'configure 'set-create-image-version
               (lambda _
                 ;; pnet produces v2.x assemblies.  Mono does this weird thing
@@ -507,7 +524,8 @@ a C-style programming language from Microsoft that is very similar to Java.")
     (arguments
      (substitute-keyword-arguments (package-arguments mono-1.9.1)
        ((#:make-flags _ #f)
-        #~(list #$(string-append "CC=" (cc-for-target))
+        #~(list "CFLAGS=-O2 -g -DARG_MAX=500 -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=return-mismatch -Wno-error=int-conversion "
+                #$(string-append "CC=" (cc-for-target))
                 "V=1"))
        ((#:tests? _ #f)
         ;; When it tries building iltests.il in mono/mini, it gets: error
@@ -559,7 +577,8 @@ a C-style programming language from Microsoft that is very similar to Java.")
               (modules '((guix build utils)
                          (ice-9 string-fun)))
               (snippet prepare-mono-source)
-              (patches (search-patches "mono-2.6.4-fixes.patch"))))
+              (patches (search-patches "mono-2.4.2.3-reproducibility.patch"
+                                       "mono-2.6.4-fixes.patch"))))
     (native-inputs (modify-inputs (package-native-inputs mono-2.4.2)
                      (replace "mono" mono-2.4.2)))))
 
@@ -773,6 +792,10 @@ a C-style programming language from Microsoft that is very similar to Java.")
      (substitute-keyword-arguments (package-arguments mono-3.0)
        ((#:phases phases #~%standard-phases)
         #~(modify-phases #$phases
+            (replace 'set-cflags
+              (lambda _
+                (setenv "CFLAGS" "-O2 -g -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=implicit-int -Wno-error=return-mismatch -Wno-error=int-conversion")
+))
             (add-after 'unpack 'set-TZ
               (lambda _
                 ;; for some reason a default is only used if this is empty, not
@@ -851,6 +874,12 @@ a C-style programming language from Microsoft that is very similar to Java.")
                 "--with-csc=mcs"))
        ((#:phases phases #~%standard-phases)
         #~(modify-phases #$phases
+            (delete 'fix-includes)
+            (add-after 'unpack 'patch-sgen-linking
+              (lambda _
+                (substitute* "tools/monograph/Makefile.am"
+                 (("/mono/metadata/libmonoruntimesgen-static[.]la")
+                  "/mono/metadata/libmonoruntimesgen-static.la $(top_builddir)/mono/sgen/libmonosgen-static.la"))))
             (add-before 'configure 'set-TZDIR
               (lambda* (#:key native-inputs inputs #:allow-other-keys)
                 (search-input-directory (or native-inputs inputs)
@@ -1844,6 +1873,7 @@ most of the heavy lifting.")
                                   "merp-json-valid.exe"))))
        ((#:phases phases #~%standard-phases)
         #~(modify-phases #$phases
+            (delete 'patch-sgen-linking)
             (delete 'patch-sub-autogen.sh-shebang)
             ;; Our 5.10.0 compiler has been rather souped up.
             (add-after 'unpack 'disable-profile-version-check

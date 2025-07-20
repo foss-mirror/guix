@@ -42,7 +42,7 @@
 ;;; Copyright © 2020 Pierre Neidhardt <mail@ambrevar.xyz>
 ;;; Copyright © 2020 Chris Marusich <cmmarusich@gmail.com>
 ;;; Copyright © 2020 Vincent Legoll <vincent.legoll@gmail.com>
-;;; Copyright © 2020, 2023, 2024 Janneke Nieuwenhuizen <janneke@gnu.org>
+;;; Copyright © 2020, 2023, 2024, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;; Copyright © 2020 Morgan Smith <Morgan.J.Smith@outlook.com>
 ;;; Copyright © 2020 John Soo <jsoo1@asu.edu>
 ;;; Copyright © 2020, 2022 Michael Rohleder <mike@rohleder.de>
@@ -73,7 +73,7 @@
 ;;; Copyright © 2022, 2023 Demis Balbach <db@minikn.xyz>
 ;;; Copyright © 2023 Bruno Victal <mirai@makinata.eu>
 ;;; Copyright © 2023 Yovan Naumovski <yovan@gorski.stream>
-;;; Copyright © 2023 Zheng Junjie <873216071@qq.com>
+;;; Copyright © 2023, 2025 Zheng Junjie <z572@z572.online>
 ;;; Copyright © 2023 dan <i@dan.games>
 ;;; Copyright © 2023 Foundation Devices, Inc. <hello@foundationdevices.com>
 ;;; Copyright © 2023, 2024 Wilko Meyer <w@wmeyer.eu>
@@ -839,16 +839,11 @@ corresponding UPSTREAM-SOURCE (an origin), using the given DEBLOB-SCRIPTS."
 
 ;; The following package is used in the early bootstrap, and thus must be kept
 ;; stable and with minimal build requirements.
-(define-public linux-libre-headers-5.15.49
-  (make-linux-libre-headers "5.15.49" "gnu"
-                            "13zqdcm4664vh7g57sxbfrlpsxm7zrma72mxdfdz7d9yndy2gfv8"))
+(define-public linux-libre-headers-6.12.17
+  (make-linux-libre-headers "6.12.17" "gnu"
+                            "1j3iyivh8h9abryjqksf4k51wgwnwqy2l3zsc019bm84xmka38xm"))
 
-;; linux 5.19 include loongarch support.
-(define-public linux-libre-headers-5.19.17
-  (make-linux-libre-headers "5.19.17" "gnu"
-                            "0m1yabfvaanbzv0ip04r4kvs16aq0pp2dk93xzi5cq18i3vw351m"))
-
-(define-public linux-libre-headers linux-libre-headers-5.15.49)
+(define-public linux-libre-headers linux-libre-headers-6.12.17)
 ;; linux-libre-headers-latest points to the latest headers package
 ;; and should be used as a dependency for packages that depend on
 ;; the headers.
@@ -2742,7 +2737,7 @@ deviation, and minimum and maximum values.  It can show a nice histogram too.")
 (define-public util-linux
   (package
     (name "util-linux")
-    (version "2.37.4")
+    (version "2.40.4")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://kernel.org/linux/utils/"
@@ -2750,7 +2745,7 @@ deviation, and minimum and maximum values.  It can show a nice histogram too.")
                                   "util-linux-" version ".tar.xz"))
               (sha256
                (base32
-                "10svcnsqmrsd660bzcm7k6dm8sa7hkknhr3bag1nccwimlb6jkk3"))
+                "0ygvflcr7v7x2rmr9h5mi07yx00i9368ggf3znd8bs847drsy7aw"))
               (patches (search-patches "util-linux-tests.patch"))
               (modules '((guix build utils)))
               (snippet
@@ -2760,8 +2755,7 @@ deviation, and minimum and maximum values.  It can show a nice histogram too.")
                   (substitute* "configure"
                     (("build_nologin=yes") "build_nologin=no")
                     (("build_logger=yes") "build_logger=no")
-                    (("build_kill=yes") "build_kill=no"))
-                  #t))))
+                    (("build_kill=yes") "build_kill=no"))))))
     (build-system gnu-build-system)
     (outputs '("out"            ;6.4 MiB executables and documentation
                "lib"            ;8.8 MiB shared libraries, headers and locales
@@ -2781,7 +2775,12 @@ deviation, and minimum and maximum values.  It can show a nice histogram too.")
                    ;; Install completions where our bash-completion package
                    ;; expects them.
                    (string-append "--with-bashcompletiondir=" #$output
-                                  "/etc/bash_completion.d"))
+                                  "/etc/bash_completion.d")
+                   ;; XXX: 32-bit Hurd platforms don't support 64bit time_t
+                   #$@(if (and (target-hurd?)
+                               (not (target-64bit?)))
+                          '("--disable-year2038")
+                          '()))
 
            ;; FIXME: For now we cannot reliably run tests on GNU/Hurd:
            ;; <https://bugs.gnu.org/47791>.
@@ -2811,7 +2810,13 @@ deviation, and minimum and maximum values.  It can show a nice histogram too.")
                      ;; Change the test to refer to the right file.
                      (substitute* "tests/ts/misc/mcookie"
                        (("/etc/services")
-                        services)))))
+                        services))
+                     (substitute* "tests/helpers/test_mkfds.c"
+                       (("/etc/fstab")
+                        (which "sh")))
+                     (substitute* "tests/helpers/test_enosys.c"
+                       (("/bin/false")
+                        (which "false"))))))
                (add-before 'check 'disable-setarch-test
                  (lambda _
                    ;; The setarch tests are unreliable in QEMU's user-mode
@@ -2861,10 +2866,12 @@ deviation, and minimum and maximum values.  It can show a nice histogram too.")
     (inputs
      (list file                         ;for libmagic
            ncurses
+           sqlite
            zlib))
     (native-inputs
      (list net-base                     ;for tests
-           perl))
+           perl
+           pkg-config))
     (home-page "https://www.kernel.org/pub/linux/utils/util-linux/")
     (synopsis "Collection of utilities for the Linux kernel")
     (description "Util-linux is a diverse collection of Linux kernel
@@ -3413,46 +3420,52 @@ Zerofree requires the file system to be unmounted or mounted read-only.")
 (define-public strace
   (package
     (name "strace")
-    (version "6.4")
-    (home-page "https://strace.io")
-    (source (origin
-             (method url-fetch)
-             (uri (string-append home-page "/files/" version
-                                 "/strace-" version ".tar.xz"))
-             (sha256
-              (base32
-               "0f4jxgsdr76mf51kv2kwhv39ap7kilrchkfvqrhd5pvzqnx7v617"))
-             (patches (search-patches "strace-readlink-tests.patch"))))
+    (version "6.15")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+              (url "https://github.com/strace/strace")
+              (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1a4xq7lji9iazrjdm0anqg2xgkypl3a9pjcm9j71s9q84ggjgwqm"))
+       (patches (search-patches "strace-readlink-tests.patch"))))
     (build-system gnu-build-system)
     (arguments
-     '(#:phases
-       (modify-phases %standard-phases
-         (add-after 'unpack 'patch-/bin/sh
-           (lambda _
-             (substitute* "src/strace.c"
-               (("/bin/sh") (which "sh")))))
-         (add-after 'unpack 'disable-failing-tests
-           (lambda _
-             (substitute* "tests/Makefile.in"
-               ;; XXX: These hang forever even if the test time-out is
-               ;; extended.
-               (("^\tstrace-DD?D?\\.test \\\\.*") "")
-               (("^\tpidns-cache.test \\\\.*") "")
-               (("^\t.*--pidns-translation.test \\\\.*") "")
-               ;; This one fails with an encoding error.
-               (("^\t.*net-yy-unix.test \\\\.*") "")))))
-       ;; Don't fail if the architecture doesn't support different
-       ;; personalities.
-       #:configure-flags '("--enable-mpers=check")
-       ;; See <https://debbugs.gnu.org/cgi/bugreport.cgi?bug=32459>.
-       #:parallel-tests? #f))           ; undeterministic failures
-    (native-inputs (list perl))
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; Needed for the 'bootstrap phase.
+          (add-after 'unpack 'patch-source-shebangs-initial
+            (assoc-ref %standard-phases 'patch-source-shebangs))
+          (add-after 'unpack 'patch-test-shebangs
+            (lambda _
+              (substitute* '("tests/detach-vfork.test"
+                             "tests/gen_tests.sh"
+                             "tests/kill-on-exit.sh")
+                (("#!/bin/sh")
+                 (string-append "#!" (which "sh")))))))
+      #:configure-flags
+      ''("--with-libunwind"
+         ;; Don't fail if the architecture doesn't support different
+         ;; personalities.
+         "--enable-mpers=check")
+      ;; See <https://debbugs.gnu.org/cgi/bugreport.cgi?bug=32459>.
+      #:parallel-tests? #f))           ; undeterministic failures
+    (inputs (list libunwind))
+    (native-inputs
+     (list autoconf
+           automake
+           perl
+           m4
+           ;; For some tests
+           util-linux))
+    (home-page "https://strace.io")
     (synopsis "System call tracer for Linux")
     (description
      "strace is a system call tracer, i.e. a debugging tool which prints out a
 trace of all the system calls made by a another process/program.")
-    (properties
-     '((release-monitoring-url . "https://github.com/strace/strace/releases")))
     (license license:lgpl2.1+)))
 
 (define-public ltrace
@@ -3690,14 +3703,14 @@ external rate conversion.")
 (define-public iptables
   (package
     (name "iptables")
-    (version "1.8.8")
+    (version "1.8.11")
     (source
      (origin
        (method url-fetch)
        (uri (list (string-append "mirror://netfilter.org/iptables/iptables-"
-                                 version ".tar.bz2")))
+                                 version ".tar.xz")))
        (sha256
-        (base32 "17w5a4znq8rdj5djcldmy6mbnxq1v88ibssk2mipc1kivj4miivi"))))
+        (base32 "1cp7kw0d3fpmfmbl4adh88v02wnj4s5rfgyxsk52pjgqbvah6wyq"))))
     (build-system gnu-build-system)
     (native-inputs
      (list pkg-config flex bison))
@@ -4253,24 +4266,34 @@ devices.  It replaces @code{iwconfig}, which is deprecated.")
         (base32 "10vbk4vplmzp3p1mhwnhj81g6i5xvam9pdvmiy6cmd0xvnmdyy77"))))
     (build-system gnu-build-system)
     (arguments
-     '(#:configure-flags
-       (list "LDFLAGS=-pthread")
-       #:phases
-       (modify-phases %standard-phases
-         ;; TODO: Patch some hardcoded "wlan0" in calibrate/calibrate.cpp to
-         ;; allow calibrating the network interface in Guix System.
-         (add-after 'unpack 'patch-absolute-file-names
-           (lambda* (#:key inputs #:allow-other-keys)
-             (let ((kmod (assoc-ref inputs "kmod")))
-               (substitute* (find-files "src" "\\.cpp$")
-                 ;; Give the right 'modprobe' file name so that essential
-                 ;; modules such as msr.ko can be loaded.
-                 (("/sbin/modprobe") (string-append kmod "/bin/modprobe"))
-                 ;; These programs are only needed to calibrate, so using
-                 ;; relative file names avoids adding extra inputs.  When they
-                 ;; are missing powertop gracefully handles it.
-                 (("/usr/s?bin/(hciconfig|hcitool|xset)" _ command)
-                  command))))))))
+      (list
+        #:configure-flags #~(list "LDFLAGS=-pthread")
+        #:phases
+        #~(modify-phases %standard-phases
+          ;; TODO: Patch some hardcoded "wlan0" in calibrate/calibrate.cpp to
+          ;; allow calibrating the network interface in Guix System.
+          (add-after 'unpack 'patch-absolute-file-names
+            (lambda* (#:key inputs #:allow-other-keys)
+              (let ((kmod (assoc-ref inputs "kmod")))
+                ;; Fix for using a more modern gettext.
+                (substitute* "autogen.sh"
+                  (("autoreconf")
+                   "autoreconf --force"))
+                (substitute* "configure.ac"
+                  (("^AM_GNU_GETTEXT_VERSION.*$")
+                   (string-append "AM_GNU_GETTEXT_VERSION(["
+                     #$(package-version (this-package-native-input "gettext-minimal"))
+                     "])\n")))
+                ;; Give the right 'modprobe' file name so that essential
+                ;; modules such as msr.ko can be loaded.
+                (substitute* (find-files "src" "\\.cpp$")
+                  (("/sbin/modprobe") (string-append kmod "/bin/modprobe"))
+                  ;; These programs are only needed to calibrate, so using
+                  ;; relative file names avoids adding extra inputs.  When they
+                  ;; are missing powertop gracefully handles it.
+                  (("/usr/s?bin/(hciconfig|hcitool|xset)" _ command)
+                   command
+                   command))))))))
     (native-inputs
      (list autoconf
            autoconf-archive
@@ -7957,7 +7980,7 @@ graphically visualizing a @file{perf.data} file.")
            (lambda* (#:key inputs outputs #:allow-other-keys)
              (let ((out (assoc-ref outputs "out"))
                    (util-linux (assoc-ref inputs "util-linux"))
-                   (cryptsetup (assoc-ref inputs "cryptsetup"))
+                   (cryptsetup (assoc-ref inputs "cryptsetup-minimal"))
                    (linux-pam (assoc-ref inputs "linux-pam"))
                    (lvm2 (assoc-ref inputs "lvm2")))
                (substitute* '("src/utils/ecryptfs-mount-private"
@@ -8017,7 +8040,7 @@ graphically visualizing a @file{perf.data} file.")
            pkg-config))
     (inputs
      (list coreutils
-           cryptsetup
+           cryptsetup-minimal
            findutils
            gawk
            grep
@@ -8250,26 +8273,28 @@ of flash storage.")
 (define-public libseccomp
   (package
     (name "libseccomp")
-    (version "2.5.4")
+    (version "2.6.0")
     (source (origin
-              (method url-fetch)
-              (uri (string-append "https://github.com/seccomp/libseccomp/"
-                                  "releases/download/v" version
-                                  "/libseccomp-" version ".tar.gz"))
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://github.com/seccomp/libseccomp")
+                    (commit (string-append "v" version))))
+              (file-name (git-file-name name version))
               (sha256
                (base32
-                "1nyb3lspc5bsirpsx89vah3n54pmwlgxrwsfaxl01kq50i004afq"))))
+                "189yh66aj3z3jvns739qbj504f3mcl3w44pxxizw877pbj3kal11"))))
     (build-system gnu-build-system)
     (arguments
-     '(#:configure-flags '("--disable-static")
-       #:phases (modify-phases %standard-phases
-                  (add-before 'check 'skip-load-test
-                    (lambda _
-                      ;; This test does a native system call and fails when
-                      ;; run under QEMU user-mode emulation.  Just skip it.
-                      (delete-file "tests/52-basic-load.tests"))))))
+     (list
+      #:configure-flags #~(list "--disable-static")
+      #:phases #~(modify-phases %standard-phases
+                   (add-before 'check 'skip-load-test
+                     (lambda _
+                       ;; This test does a native system call and fails when
+                       ;; run under QEMU user-mode emulation.  Just skip it.
+                       (delete-file "tests/52-basic-load.tests"))))))
     (native-inputs
-     (list gperf which))
+     (list autoconf automake gperf libtool which))
     (synopsis "Interface to Linux's seccomp syscall filtering mechanism")
     (description "The libseccomp library provides an easy to use, platform
 independent, interface to the Linux Kernel's syscall filtering mechanism.  The
@@ -8345,9 +8370,12 @@ under OpenGL graphics workloads.")
                            (string-append "libdir="
                                           #$output "/lib")
                            (string-append "CC="
-                                          #$(cc-for-target)) "HOSTCC=gcc"
-                                          (string-append "LDFLAGS=-Wl,-rpath="
-                                                         #$output "/lib"))
+                                          #$(cc-for-target))
+                           "HOSTCC=gcc"
+                           (string-append "LDFLAGS=-Wl,-rpath="
+                                          #$output "/lib")
+                           ;; Strictly only needed for i686-linux/32bit
+                           "CFLAGS=-g -O2 -Wno-error=format")
       #:phases #~(modify-phases %standard-phases
                    (add-after 'unpack 'build-deterministically
                      (lambda _
@@ -8834,14 +8862,14 @@ re-use code and to avoid re-inventing the wheel.")
 (define-public libnftnl
   (package
     (name "libnftnl")
-    (version "1.2.6")
+    (version "1.2.8")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "mirror://netfilter.org/libnftnl/"
                            "libnftnl-" version ".tar.xz"))
        (sha256
-        (base32 "1x3pqxclpxcw8x5qx0vyi7znf9xwlkqsfd9sy4cxlir1v4nfmsnf"))))
+        (base32 "15ddcyp91lxjh2wfi8xicjpffhn9rpiqsa8djbkqvc69npbabzip"))))
     (build-system gnu-build-system)
     (native-inputs
      (list pkg-config))
@@ -8862,15 +8890,16 @@ used by nftables.")
 ;; This is used in iptables, which contributes to rust.  We're pinning this
 ;; variant to avoid accidental rebuilds of rust.
 (define-public libnftnl/pinned
-  (package (inherit libnftnl)
-    (version "1.2.3")
+  (package
+    (inherit libnftnl)
+    (version "1.2.8")
     (source
      (origin
        (method url-fetch)
        (uri (string-append "mirror://netfilter.org/libnftnl/"
-                           "libnftnl-" version ".tar.bz2"))
+                           "libnftnl-" version ".tar.xz"))
        (sha256
-        (base32 "0m82bmh8i24hwxmz7rxwxjll4904ghd2b1x1p5h8algrg6dyl5p9"))))
+        (base32 "15ddcyp91lxjh2wfi8xicjpffhn9rpiqsa8djbkqvc69npbabzip"))))
     (build-system gnu-build-system)
     (native-inputs
      (list pkg-config))
@@ -9259,7 +9288,8 @@ Text-based output formats: CSV, XML, Netfilter's LOG, Netfilter's conntrack
         (base32 "186qsg4yvisqjgf8w5jxhnlig7x341vpqwcgp8as3r59qmqkpmk7"))
        ;; Waiting for upstream inclusion at
        ;; https://github.com/proot-me/proot/pull/355
-       (patches (search-patches "proot-add-clone3.patch"))))
+       (patches (search-patches "proot-add-clone3.patch"
+                                "proot-add-missing-include.patch"))))
     (build-system gnu-build-system)
     ;; Many architectures are not supported (see:
     ;; https://github.com/proot-me/proot/blob/master/src/arch.h#L51).
@@ -10113,7 +10143,7 @@ configuration files.  It supports data files in ASCII, MBCS and Unicode.")
 (define-public xfsprogs
   (package
     (name "xfsprogs")
-    (version "6.0.0")
+    (version "6.12.0")
     (source (origin
               (method url-fetch)
               (uri (string-append
@@ -10121,7 +10151,7 @@ configuration files.  It supports data files in ASCII, MBCS and Unicode.")
                     "xfsprogs-" version ".tar.gz"))
               (sha256
                (base32
-                "14hc61nfc73nqwhyasc4haj5g7046im1dwz61bx338f86mjj5n5y"))))
+                "1n46n27fxx1137kni3drrhzhp1l8ksxabcsmi8yzxbhpbnl4q293"))))
     (build-system gnu-build-system)
     (outputs (list "out" "python"))
     (arguments
@@ -10177,7 +10207,15 @@ file systems.")
                     "xfsprogs-" version ".tar.gz"))
               (sha256
                (base32
-                "13xkn9jpmwp4fm9r68vhgznkmxhnv83n2b39mhy2qdaph90w2a1l"))))))
+                "13xkn9jpmwp4fm9r68vhgznkmxhnv83n2b39mhy2qdaph90w2a1l"))))
+    (arguments
+     (substitute-keyword-arguments (package-arguments xfsprogs)
+       ((#:configure-flags configure-flags '())
+        `(cons "--enable-gettext=no"
+               ,configure-flags))))
+    (native-inputs
+     (modify-inputs (package-native-inputs xfsprogs)
+       (delete "gettext-minimal")))))
 
 (define-public xfsprogs/static
   (package
@@ -10259,7 +10297,7 @@ the superuser to make device nodes.")
 (define-public fakeroot
   (package
     (name "fakeroot")
-    (version "1.35.1")
+    (version "1.37.1.2")
     (source
      (origin
        ;; There are no tags in the repository, so take this snapshot.
@@ -10268,7 +10306,7 @@ the superuser to make device nodes.")
                            "fakeroot/fakeroot_" version ".orig.tar.gz"))
        (file-name (string-append name "-" version ".tar.gz"))
        (sha256
-        (base32 "1p2zcng64sigixppmh42gd3ava771pmq9a6lwva7flp05lxya3ba"))
+        (base32 "091jym16c4m4qjf5yclksvx7nw4sl7v5yrkz6z46wrwaij99d54m"))
        (modules '((guix build utils)
                   (ice-9 ftw)))
        (snippet
@@ -10331,7 +10369,7 @@ the superuser to make device nodes.")
                (("tar -tvf") "tar --numeric-owner -tvf")))))))
     (native-inputs
      (list autoconf-2.71 automake gettext-minimal libtool po4a
-           sharutils xz))               ; for tests
+           perl sharutils xz))               ; for tests
     (inputs
      (list acl libcap util-linux sed coreutils))
     (synopsis "Run commands in an environment with fake root privileges")
@@ -10692,14 +10730,14 @@ platforms, it is not limited to resource-constrained systems.")
 (define-public kexec-tools
   (package
     (name "kexec-tools")
-    (version "2.0.30")
+    (version "2.0.31")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://kernel.org/linux/utils/kernel"
                                   "/kexec/kexec-tools-" version ".tar.xz"))
               (sha256
                (base32
-                "0khjha6qjgbg7v470mwv333k1i9aqggvs1z93nfhba17mykmz2kl"))))
+                "0c9cj9xvcm81gcwnkvvh9vh82v59kdz5llmblc2wkqb6vh6kb3wa"))))
     (build-system gnu-build-system)
     (arguments
      ;; There are no automated tests.

@@ -2,7 +2,7 @@
 ;;; Copyright © 2015 Andreas Enge <andreas@enge.fr>
 ;;; Copyright © 2015 Sou Bunnbu <iyzsong@gmail.com>
 ;;; Copyright © 2015, 2017 Andy Wingo <wingo@pobox.com>
-;;; Copyright © 2015-2017, 2019, 2021-2022 Ludovic Courtès <ludo@gnu.org>
+;;; Copyright © 2015-2017, 2019, 2021-2022, 2025 Ludovic Courtès <ludo@gnu.org>
 ;;; Copyright © 2015, 2017, 2018, 2019, 2021, 2022, 2023 Ricardo Wurmus <rekado@elephly.net>
 ;;; Copyright © 2015 David Hashe <david.hashe@dhashe.com>
 ;;; Copyright © 2016, 2017, 2019, 2021-2024 Efraim Flashner <efraim@flashner.co.il>
@@ -34,7 +34,7 @@
 ;;; Copyright © 2022 muradm <mail@muradm.net>
 ;;; Copyright © 2023 Alex Devaure <ajadevaure@gmail.com>
 ;;; Copyright © 2023 Bruno Victal <mirai@makinata.eu>
-;;; Copyright © 2024 Zheng Junjie <873216071@qq.com>
+;;; Copyright © 2024-2025 Zheng Junjie <z572@z572.online>
 ;;; Copyright © 2022 Samuel Culpepper <sculpepper@newstore.com>
 ;;; Copyright © 2024 aurtzy <aurtzy@gmail.com>
 ;;; Copyright © 2024 Dariqq <dariqq@posteo.net>
@@ -907,7 +907,6 @@ the freedesktop.org XDG Base Directory specification.")
   (package
     (name "elogind")
     (version "255.17")
-    (replacement elogind/fixed)
     (source (origin
               (method git-fetch)
               (uri (git-reference
@@ -978,8 +977,8 @@ the freedesktop.org XDG Base Directory specification.")
          (add-after 'unpack 'fix-pkttyagent-path
            (lambda _
              (substitute* "meson.build"
-               (("join_paths\\(bindir, 'pkttyagent'\\)")
-                "'\"/run/current-system/profile/bin/pkttyagent\"'"))))
+               (("bindir / 'pkttyagent'")
+                "'/run/current-system/profile/bin/pkttyagent'"))))
          (add-after 'unpack 'use-global-hook-directory
            ;; XXX There is no run-time setting to set this per-process, only a
            ;; build-time, hard-coded list of global directories.
@@ -1093,20 +1092,6 @@ extracted out as a separate project.  Elogind integrates with PAM to provide
 the org.freedesktop.login1 interface over the system bus, allowing other parts
 of a the system to know what users are logged in, and where.")
     (license license:lgpl2.1+)))
-
-(define-public elogind/fixed
-  (hidden-package
-   (package
-     (inherit elogind)
-     (arguments
-      (substitute-keyword-arguments (package-arguments elogind)
-        ((#:phases phases)
-         #~(modify-phases #$phases
-             (replace 'fix-pkttyagent-path
-               (lambda _
-                 (substitute* "meson.build"
-                   (("bindir / 'pkttyagent'")
-                    "'/run/current-system/profile/bin/pkttyagent'")))))))))))
 
 (define-public basu
   (package
@@ -1662,7 +1647,7 @@ compositor.")
 (define-public waylandpp
   (package
     (name "waylandpp")
-    (version "0.2.9")
+    (version "1.0.1")
     (home-page "https://github.com/NilsBrause/waylandpp")
     (source (origin
               (method git-fetch)
@@ -1670,7 +1655,7 @@ compositor.")
               (file-name (git-file-name name version))
               (sha256
                (base32
-                "0z4m30r609as3kpcgipivddr98y7h529r7ldn9ba4snhk341mfvk"))))
+                "0y7k6hr4azy6fx54m9k74n47bcrvyvk0yawxf786i5mrg98hm9mw"))))
     (build-system cmake-build-system)
     (arguments
      `(#:tests? #f))                    ; no tests
@@ -1977,7 +1962,7 @@ Analysis and Reporting Technology) functionality.")
     (inputs
      (list acl
            bash-minimal
-           cryptsetup
+           cryptsetup-minimal
            kmod
            libatasmart
            libblockdev
@@ -2067,6 +2052,10 @@ message bus.")
                 (search-input-file inputs "bin/passwd"))
                (("/usr/bin/chage")
                 (search-input-file inputs "bin/chage")))))
+          (add-before 'configure 'relax-gcc-14-strictness
+            (lambda _
+              (setenv "CFLAGS"
+                      "-g -O2 -Wno-error=implicit-function-declaration")))
          (add-after 'install 'wrap-with-xdg-data-dirs
            ;; This is to allow accountsservice finding extensions, which
            ;; should be installed to the system profile.
@@ -3170,7 +3159,8 @@ useful with system integration.")
       (propagated-inputs
        (list gtk+ libdbusmenu))
       (arguments
-       `(#:configure-flags '("--with-gtk=3")
+       `(#:parallel-build? #f ; race condition for application-service-marshal.h
+         #:configure-flags '("--with-gtk=3")
          #:make-flags '("CFLAGS=-Wno-error")
          #:tests? #f ; One test does not pass (it succeeds when it should fail).
          #:phases
@@ -3340,6 +3330,10 @@ compatible with the well-known scripts of the same name.")
              (for-each (lambda (po)
                          (chmod po #o666))
                        (find-files "po" "\\.po$"))))
+         (add-before 'configure 'relax-gcc-14-strictness
+           (lambda _
+             (setenv "CFLAGS"
+                     "-g -O2 -Wno-error=incompatible-pointer-types")))
          (add-after 'unpack 'set-home-directory
            (lambda _ (setenv "HOME" "/tmp"))))))
     (native-inputs
@@ -3491,14 +3485,14 @@ interfaces.")
 (define-public xdg-desktop-portal-kde
   (package
     (name "xdg-desktop-portal-kde")
-    (version "6.2.5")
+    (version "6.3.4")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://kde/stable/plasma/" version "/"
                                   name "-" version ".tar.xz"))
               (sha256
                (base32
-                "1w9sc8a4a3h3604x6vakhbiqibcwxiqpcd4kvq540cy4gmpvz1hy"))))
+                "0888kybi3xqp45chlvh5w43rs4jw0z9kmn1pslfp5b1dkmkjzijr"))))
     (build-system qt-build-system)
     (arguments (list
                 #:tests? #f ;; colorschemetest test fail, because require dbus.

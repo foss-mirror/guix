@@ -11,6 +11,7 @@
 ;;; Copyright © 2023 Zheng Junjie <873216071@qq.com>
 ;;; Copyright © 2025 Lukas Gradl <lgradl@posteo.net>
 ;;; Copyright © 2025 Antoine Côté <antoine.cote@posteo.net>
+;;; Copyright © 2024 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -319,7 +320,6 @@ filters for the PDF-centric printing workflow introduced by OpenPrinting.")
   (package
     (name "cups-minimal")
     (version "2.4.9")
-    (replacement cups-minimal/fixed)
     (source
      (origin
        (method git-fetch)
@@ -329,7 +329,8 @@ filters for the PDF-centric printing workflow introduced by OpenPrinting.")
        ;; Avoid NAME confusion: these are the complete CUPS sources.
        (file-name (git-file-name "cups" version))
        (sha256
-        (base32 "08wjd1flyaslhnwvxl39403qi3g675rk532ysiyk6cda4r8ks1g1"))))
+        (base32 "08wjd1flyaslhnwvxl39403qi3g675rk532ysiyk6cda4r8ks1g1"))
+       (patches (search-patches "cups-minimal-Address-PPD-injection-issues.patch"))))
     (build-system gnu-build-system)
     (arguments
      (list #:configure-flags
@@ -408,15 +409,6 @@ supported through legacy PPD-based printer drivers called ``printer
 applications''.  These must be installed separately.")
     ;; CUPS is Apache 2.0 with exceptions, see the NOTICE file.
     (license license:asl2.0)))
-
-(define cups-minimal/fixed
-  (package
-    (inherit cups-minimal)
-    (source
-     (origin
-       (inherit (package-source cups-minimal))
-       (patches
-        (search-patches "cups-minimal-Address-PPD-injection-issues.patch"))))))
 
 (define-public cups
   (package/inherit cups-minimal
@@ -654,6 +646,19 @@ should only be used as part of the Guix cups-pk-helper service.")
               "--disable-qt4")
       #:phases
       #~(modify-phases %standard-phases
+          (add-after 'unpack 'set-gcc-14-cflags
+            ;; We set CFLAGS here because adding setting it in
+            ;; #:configure-flags or #:make-flags does not work.
+            (lambda _
+              (substitute* "Makefile.in"
+                (("CFLAGS = @CFLAGS@" all)
+                 (string-append all
+                                " -Wno-error=attributes"
+                                " -Wno-error=implicit-function-declaration"
+                                " -Wno-error=implicit-int"
+                                " -Wno-error=incompatible-pointer-types"
+                                " -Wno-error=int-conversion"
+                                " -Wno-error=return-mismatch")))))
           (add-after 'unpack 'fix-hard-coded-file-names
             (lambda* (#:key inputs outputs #:allow-other-keys)
               (let ((out #$output)
@@ -963,7 +968,8 @@ HP@tie{}LaserJet, and possibly other printers.  See @file{README} for details.")
            `((srfi srfi-26)
              ,@%default-gnu-modules)
            #:configure-flags
-           #~(list "--disable-static"
+           #~(list "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration"
+                   "--disable-static"
                    (string-append "--prefix=" #$output)
                    (string-append "--with-cupsfilterdir=" #$output "/lib/cups/filter")
                    (string-append "--with-cupsppddir=" #$output "/share/cups/model"))

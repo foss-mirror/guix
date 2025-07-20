@@ -29,6 +29,7 @@
 ;;; Copyright © 2023 John Kehayias <john.kehayias@protonmail.com>
 ;;; Copyright © 2023 Dominik Delgado Steuter <d@delgado.nrw>
 ;;; Copyright © 2023 Timothy Sample <samplet@ngyro.com>
+;;; Copyright © 2024, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;;
 ;;; This file is part of GNU Guix.
 ;;;
@@ -297,9 +298,6 @@ should not be installed in a profile.")
 (define-public texlive-libkpathsea
   (package
     (name "texlive-libkpathsea")
-    ;; TODO: ungraft on tex-team or a dedicated branch,
-    ;; integrating the missing definitions.
-    (replacement texlive-libkpathsea/fixed)
     (version (package-version texlive-source))
     (source
      (origin
@@ -346,9 +344,13 @@ should not be installed in a profile.")
                 (("^TEXMFDIST = .*") "TEXMFDIST = {$GUIX_TEXMF}\n")
                 ;; Use XDG recommendations for local variables.  Also ignore
                 ;; system-wide cache, which is not writable; use local one
-                ;; instead, i.e., "$XDG_CACHE_HOME/.texliveYYYY/texmf-var/".
-                (("^TEXMFVAR = ~/") "TEXMFVAR = $XDG_CACHE_HOME/")
-                (("^TEXMFCONFIG = ~/") "TEXMFCONFIG = $XDG_CONFIG_HOME/")
+                ;; instead, i.e., "$XDG_CACHE_HOME/texliveYYYY/texmf-var/".
+                (("^TEXMFVAR = ~/\\.")
+                 (string-append "XDG_CACHE_HOME = ~/.cache\n"
+                                "TEXMFVAR = $XDG_CACHE_HOME/"))
+                (("^TEXMFCONFIG = ~/\\.")
+                 (string-append "XDG_CONFIG_HOME = ~/.config\n"
+                                "TEXMFCONFIG = $XDG_CONFIG_HOME/"))
                 (("^TEXMFCACHE = .*") "TEXMFCACHE = $TEXMFVAR\n")
                 ;; "ls-R" files are to be expected only in the TEXMFDIST
                 ;; directories.  TEXMFLOCAL is not necessary for Guix, but
@@ -398,47 +400,6 @@ should not be installed in a profile.")
      "Kpathsea is a library whose purpose is to return a filename from a list
 of user-specified directories similar to how shells look up executables.")
     (license license:lgpl2.1)))
-
-(define texlive-libkpathsea/fixed
-  (package
-    (inherit texlive-libkpathsea)
-    (arguments
-     (substitute-keyword-arguments (package-arguments texlive-libkpathsea)
-       ((#:phases phases)
-        #~(modify-phases #$phases
-            (replace 'customize-texmf.cnf
-              (lambda _
-                (substitute* "texk/kpathsea/texmf.cnf"
-                  (("^TEXMFROOT = .*") "TEXMFROOT = {$GUIX_TEXMF}/..\n")
-                  (("^TEXMFDIST = .*") "TEXMFDIST = {$GUIX_TEXMF}\n")
-                  ;; Use XDG recommendations for local variables.  Also ignore
-                  ;; system-wide cache, which is not writable; use local one
-                  ;; instead, i.e., "$XDG_CACHE_HOME/texliveYYYY/texmf-var/".
-                  (("^TEXMFVAR = ~/\\.")
-                   (string-append "XDG_CACHE_HOME = ~/.cache\n"
-                                  "TEXMFVAR = $XDG_CACHE_HOME/"))
-                  (("^TEXMFCONFIG = ~/\\.")
-                   (string-append "XDG_CONFIG_HOME = ~/.config\n"
-                                  "TEXMFCONFIG = $XDG_CONFIG_HOME/"))
-                  (("^TEXMFCACHE = .*") "TEXMFCACHE = $TEXMFVAR\n")
-                  ;; "ls-R" files are to be expected only in the TEXMFDIST
-                  ;; directories.  TEXMFLOCAL is not necessary for Guix, but
-                  ;; could be required anyway by external TeX installations.
-                  (("^TEXMF = .*")
-                   "TEXMF = {$TEXMFCONFIG,$TEXMFVAR,$TEXMFHOME,!!TEXMFLOCAL,TEXMFSYSVAR,TEXMFSYSCONFIG,!!$TEXMFDIST}\n")
-                  (("^TEXMFDBS = .*") "TEXMFDBS = {!!$TEXMFLOCAL,!!$TEXMFDIST}\n")
-                  ;; Set TEXMFCNF.  Since earlier values of variables have
-                  ;; precedence over later ones, insert the desired value first.
-                  (("^TEXMFCNF =")
-                   (string-append
-                    "TEXMFCNF = " #$output "/share/texmf-dist/web2c\n"
-                    "TEXMFCNF ="))
-                  ;; Help TeX finding fonts installed on the system.
-                  (("^OSFONTDIR = .*") "OSFONTDIR = {$XDG_DATA_DIRS}\n")
-                  ;; Don't truncate lines.
-                  (("^error_line = .*$") "error_line = 254\n")
-                  (("^half_error_line = .*$") "half_error_line = 238\n")
-                  (("^max_print_line = .*$") "max_print_line = 1000\n"))))))))))
 
 (define-public texlive-libptexenc
   (package
@@ -876,7 +837,8 @@ and should be preferred to it whenever a package would otherwise depend on
       #:out-of-source? #t
       #:configure-flags
       #~(let ((kpathsea #$(this-package-input "texlive-libkpathsea")))
-          (list "--with-banner-add=/GNU Guix"
+          (list "CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types"
+                "--with-banner-add=/GNU Guix"
                 "--enable-shared"
                 "--disable-native-texlive-build"
                 "--disable-static"
@@ -97535,7 +97497,10 @@ that it will build with web2c out of the box.")
     (arguments
      (substitute-keyword-arguments (package-arguments texlive-bin)
        ((#:configure-flags flags)
-        #~(cons "--enable-xdvik" (delete "--enable-web2c" #$flags)))
+        #~(cons*
+           "CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types"
+           "--enable-xdvik"
+           (delete "--enable-web2c" #$flags)))
        ((#:phases phases)
         #~(modify-phases #$phases
             (replace 'check

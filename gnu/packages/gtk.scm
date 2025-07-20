@@ -1,6 +1,6 @@
 ;;; GNU Guix --- Functional package management for GNU
 ;;; Copyright © 2013 Andreas Enge <andreas@enge.fr>
-;;; Copyright © 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021 Ludovic Courtès <ludo@gnu.org>
+;;; Copyright © 2013-2021, 2025 Ludovic Courtès <ludo@gnu.org>
 ;;; Copyright © 2014, 2015, 2017, 2018, 2019, 2021 Mark H Weaver <mhw@netris.org>
 ;;; Copyright © 2014 Eric Bavier <bavier@member.fsf.org>
 ;;; Copyright © 2015 Federico Beffa <beffa@fbengineering.ch>
@@ -35,7 +35,7 @@
 ;;; Copyright © 2022 Petr Hodina <phodina@protonmail.com>
 ;;; Copyright © 2023 Sergiu Ivanov <sivanov@colimite.fr>
 ;;; Copyright © 2023, 2024 Zheng Junjie <873216071@qq.com>
-;;; Copyright © 2023 Janneke Nieuwenhuizen <janneke@gnu.org>
+;;; Copyright © 2023, 2025 Janneke Nieuwenhuizen <janneke@gnu.org>
 ;;; Copyright © 2024 John Kehayias <john.kehayias@protonmail.com>
 ;;; Copyright © 2025 Florian Pelz <pelzflorian@pelzflorian.de>
 ;;; Copyright © 2025 Remco van 't Veer <remco@remworks.net>
@@ -169,11 +169,10 @@ such as mate-panel and xfce4-panel.")
     (home-page "https://gitlab.com/vala-panel-project/vala-panel-appmenu")
     (license (list license:lgpl3))))
 
-(define cairo
+(define-public cairo
   (package
     (name "cairo")
-    (version "1.18.2")
-    (replacement cairo-1.18.4)
+    (version "1.18.4")
     (source
      (origin
        (method url-fetch)
@@ -181,7 +180,7 @@ such as mate-panel and xfce4-panel.")
         (string-append "https://cairographics.org/releases/cairo-"
                        version ".tar.xz"))
        (sha256
-        (base32 "0nnli5cghygbl9bvlbjls7nspnrrzx1y1pbd7p649s154js9nax6"))))
+        (base32 "1jrcqfcna0358aqrk7rnys1hwq6k36ilr9r62bg26j3fi8hdhpj4"))))
     (build-system meson-build-system)
     (arguments
      `(#:tests? #f ; see http://lists.gnu.org/archive/html/bug-guix/2013-06/msg00085.html
@@ -239,21 +238,6 @@ output.  Experimental backends include OpenGL, BeOS, OS/2, and DirectFB.")
       license:mpl1.1))
     ;; Hide and have cairo-with-documentation public.
     (properties '((hidden? . #t)))))
-
-;;; TODO: This newer version resolves an issue when writing PDFs.  Remove
-;;; after ungrafting cairo.
-(define cairo-1.18.4
-  (package
-    (inherit cairo)
-    (version "1.18.4")
-    (source
-     (origin
-       (method url-fetch)
-       (uri
-        (string-append "https://cairographics.org/releases/cairo-"
-                       version ".tar.xz"))
-       (sha256
-        (base32 "1jrcqfcna0358aqrk7rnys1hwq6k36ilr9r62bg26j3fi8hdhpj4"))))))
 
 (define-public cairo-with-documentation
   ;; cairo's docs must be built in a separate package since it requires
@@ -525,6 +509,10 @@ g_test_add_func \\(\"/layout/gravity-metrics2\", test_gravity_metrics2\\);")
               (base32
                "0ip0ziys6mrqqmz4n71ays0kf5cs1xflj1gfpvs4fgy2nsrr482m"))))
     (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list "CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types")))
     (inputs
      (list glib pango-1.42))
     (native-inputs
@@ -727,10 +715,15 @@ highlighting and other features typical of a source code editor.")
                (base32
                 "1zbpj283b5ycz767hqz5kdq02wzsga65pp4fykvhg8xj6x50f6v9"))))
     (build-system gnu-build-system)
-    (arguments (substitute-keyword-arguments (package-arguments gtksourceview)
-                 ((#:phases phases)
-                  `(modify-phases ,phases
-                     (delete 'disable-gtk-update-icon-cache)))))))
+    (arguments
+     (append
+      (list
+       #:configure-flags
+       #~(list "CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types"))
+      (substitute-keyword-arguments (package-arguments gtksourceview)
+        ((#:phases phases)
+         `(modify-phases ,phases
+            (delete 'disable-gtk-update-icon-cache))))))))
 
 (define-public gdk-pixbuf
   (package
@@ -993,7 +986,11 @@ is part of the GNOME accessibility project.")
      (list
       #:parallel-tests? #f
       #:configure-flags
-      #~(list "--with-xinput=yes"
+      #~(list #$(string-append
+                 "CFLAGS=-g -O2"
+                 " -Wno-error=implicit-int"
+                 " -Wno-error=incompatible-pointer-types")
+              "--with-xinput=yes"
               (string-append "--with-html-dir=" #$output
                              "/share/gtk-doc/html"))
       #:phases
@@ -2309,16 +2306,16 @@ and routines to assist in editing internationalized text.")
   ;; of 2024-03)
   (package
     (name "girara")
-    (version "0.4.3")
+    (version "0.4.5")
     (source
      (origin
        (method git-fetch)
        (uri (git-reference
-             (url "https://git.pwmt.org/pwmt/girara")
-             (commit version)))
+              (url "https://github.com/pwmt/girara/")
+              (commit version)))
        (file-name (git-file-name name version))
        (sha256
-        (base32 "0cbcs3810frgdmal5ia9pf3rk3k5h4xyzw1d2ia3rcg4nms5gcpx"))))
+        (base32 "04igidbihgq5k7fh0jd5n26w00qlb47riky6q7qlp5k314d6cd2y"))))
     (arguments
      (list
       #:phases

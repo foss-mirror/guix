@@ -200,7 +200,8 @@
        (patches (search-patches "qemu-build-info-manual.patch"
                                 "qemu-disable-bios-tables-test.patch"
                                 "qemu-disable-migration-test.patch"
-                                "qemu-fix-agent-paths.patch"))
+                                "qemu-fix-agent-paths.patch"
+                                "qemu-glibc-2.41.patch"))
        (modules '((guix build utils)))
        (snippet
         '(begin
@@ -1128,7 +1129,7 @@ commodity hardware.")
      (list autoconf automake jq))
     (inputs
      (list btrfs-progs
-           cryptsetup
+           cryptsetup-minimal
            e2fsprogs
            f2fs-tools
            lvm2
