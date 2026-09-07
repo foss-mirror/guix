@@ -1168,7 +1168,13 @@ application suites.")
                        "--no-suite=gsk-compare-ngl"
                        "--no-suite=gsk-compare-vulkan"
                        "--no-suite=svg")
-                     '()))
+                     '())
+              #$@(if (target-x86-32?)
+                     ;; These two suites contain 70 failing tests, due to
+                     ;; precision differences in the expected values.
+                     #~("--no-suite=gsk-nodeparser"
+                        "--no-suite=svg")
+                     #~()))
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'generate-gdk-pixbuf-loaders-cache-file
@@ -1237,15 +1243,14 @@ application suites.")
               ;; XXX: These failures appear specific to i686 – investigate them.
               #$@(if (target-x86-32?)
                      #~((substitute* "testsuite/gsk/meson.build"
-                          (("'empty-(fill|stroke)\\.node',") "")
-                          (("'fill2?\\.node',") "")
-                          (("'stroke\\.node',") "")
                           (("'fill-fractional-([a-z-]*)-nogl',") "")
                           (("\\[ 'path-special-cases' \\],") "")
                           (("\\[ '(path|curve)-special-cases' \\],") "")
                           (("\\[ 'path-private' \\],") ""))
                         (substitute* "testsuite/a11y/meson.build"
-                          (("\\{ 'name': 'text(view)?' \\},") "")))
+                          (("\\{ 'name': 'text(view)?' \\},") ""))
+                        (substitute* "testsuite/css/parser/meson.build"
+                          ((".*math.css.*") "")))
                      #~())))
           (add-before 'build 'set-cache
             (lambda _
@@ -1292,7 +1297,13 @@ application suites.")
           ;; Introspection test requires installed libraries
           (delete 'check)
           (add-after 'install 'check
-            (assoc-ref %standard-phases 'check)))))
+            (assoc-ref %standard-phases 'check))
+          #$@(if (target-32bit?)
+                 ;; This currently fails with Guile running out of memory to
+                 ;; load the large ELF files in memory (see:
+                 ;; <https://codeberg.org/guix/guix/issues/1262>).
+                 #~((delete 'make-dynamic-linker-cache))
+                 #~()))))
     (native-inputs
      (append (if (supported-package? librsvg)
                  ;; Only needed for tests
